@@ -110,7 +110,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             val errors = mutableListOf<String>()
             val fromAndroid = if (observer != null) {
                 runCatching { repository.loadVideos() }
-                    .onFailure { errors += "biblioteca de Android: ${it.message}" }
+                    .onFailure { errors += "biblioteca de Android: ${it.describe()}" }
                     .getOrDefault(emptyList())
             } else {
                 emptyList()
@@ -120,12 +120,12 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                 if (settings.fullScan) {
                     runCatching { scanner.scanStorage() }
                         .onSuccess { addAll(it) }
-                        .onFailure { errors += "escaneo del teléfono: ${it.message}" }
+                        .onFailure { errors += "escaneo del teléfono: ${it.describe()}" }
                 }
                 settings.folders.forEach { tree ->
                     runCatching { scanner.scanTree(Uri.parse(tree)) }
                         .onSuccess { addAll(it) }
-                        .onFailure { errors += "carpeta: ${it.message}" }
+                        .onFailure { errors += "carpeta: ${it.describe()}" }
                 }
             }
             // Un mismo archivo puede salir por los dos caminos: se queda la versión de Android
@@ -175,4 +175,11 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
             folders = folders,
         )
     }
+}
+
+/** Texto del error con su tipo, para poder diagnosticarlo desde una captura. */
+private fun Throwable.describe(): String {
+    val root = generateSequence(this) { it.cause }.last()
+    return listOfNotNull(javaClass.simpleName, root.takeIf { it !== this }?.javaClass?.simpleName, root.message)
+        .joinToString(": ")
 }

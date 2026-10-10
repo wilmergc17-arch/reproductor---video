@@ -85,10 +85,18 @@ class VideoRepository(private val context: Context) {
                     durationMs = duration,
                     sizeBytes = c.getLong(sizeCol),
                     dateAddedSec = c.getLong(dateCol),
-                    kind = VideoClassifier.classify(name, folderPath, duration),
+                    kind = classifySafely(name, folderPath, duration),
                 )
             }
         }
         videos
     }
 }
+
+/** Si el clasificador falla con algún nombre raro, el video igual aparece (como "Otros"). */
+fun classifySafely(fileName: String, folderPath: String, durationMs: Long): VideoKind =
+    try {
+        VideoClassifier.classify(fileName, folderPath, durationMs)
+    } catch (e: Throwable) {
+        VideoKind.Other(fileName.substringBeforeLast('.'))
+    }

@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.Environment
 import android.provider.DocumentsContract
-import com.wilmer.reproductor.classify.VideoClassifier
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -164,7 +163,7 @@ class FileScanner(private val context: Context) {
             durationMs = 0,
             sizeBytes = size,
             dateAddedSec = modifiedMs / 1000,
-            kind = VideoClassifier.classify(name, folderPath, 0),
+            kind = classifySafely(name, folderPath, 0),
         )
 
     companion object {

@@ -30,7 +30,8 @@ object VideoClassifier {
     private const val MOVIE_MIN_DURATION_MS = 60 * 60 * 1000L
 
     private val EXTENSION = Regex("""\.[A-Za-z0-9]{2,4}$""")
-    private val BRACKETS = Regex("""\[[^\]]*]|\{[^}]*}""")
+    // Llaves y corchetes escapados: el motor de expresiones de Android (ICU) no acepta "}" suelto
+    private val BRACKETS = Regex("""\[[^\]]*\]|\{[^\}]*\}""")
     private val EMPTY_PARENS = Regex("""\(\s*\)""")
     private val SPACES = Regex("""\s+""")
     private val WEBSITE = Regex("""(?i)^www \S+ (com|net|org|to|tv|mx|co|es)\b[\s-]*""")
