@@ -2,10 +2,14 @@
 
 App Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.2.0)
+## Qué hace (versión 0.2.1)
 
 ### Biblioteca
-- Encuentra todos los videos del teléfono (pide permiso la primera vez) con miniaturas y duración.
+- Tres formas de encontrar videos, combinables desde el menú ⋮ > "Carpetas a escanear…":
+  - **Galería de Android** (permiso de videos; en Android 14 también acceso parcial).
+  - **Escanear todo el teléfono**: recorre memoria interna y tarjeta SD archivo por archivo, incluidas carpetas que la galería no indexa (pide "acceso a todos los archivos").
+  - **Elegir carpetas**: el selector del sistema; las carpetas quedan guardadas y se vuelven a revisar al abrir la app.
+- Miniaturas y duración; si no aparece nada, la pantalla dice cuántos videos dio cada fuente y el error, si hubo.
 - Pestañas: **Videos** (ordenar por fecha, nombre, duración o tamaño), **Carpetas**, **Películas**, **Series** y **Listas**.
 - Búsqueda sin distinguir mayúsculas ni tildes.
 - Se actualiza sola cuando agregas o borras videos.

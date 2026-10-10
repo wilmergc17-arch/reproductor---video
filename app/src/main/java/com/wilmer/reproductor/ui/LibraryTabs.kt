@@ -68,7 +68,7 @@ fun VideoList(
     }
     LazyColumn(Modifier.fillMaxSize()) {
         header?.let { item { it() } }
-        itemsIndexed(videos, key = { _, v -> v.id }) { index, video ->
+        itemsIndexed(videos, key = { _, v -> v.uri.toString() }) { index, video ->
             LibraryVideoRow(
                 video = video,
                 onClick = { play(videos, index) },
@@ -237,7 +237,7 @@ private fun ShowDetail(
                     }
                 }
             }
-            items(visible, key = { it.id }) { video ->
+            items(visible, key = { it.uri.toString() }) { video ->
                 val ep = video.kind as VideoKind.Episode
                 LibraryVideoRow(
                     video = video,

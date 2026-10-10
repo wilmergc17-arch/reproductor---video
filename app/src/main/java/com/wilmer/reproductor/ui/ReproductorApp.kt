@@ -1,6 +1,20 @@
 package com.wilmer.reproductor.ui
 
 import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.os.Environment
+import android.provider.Settings
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import com.wilmer.reproductor.data.ScanSettings
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -93,9 +107,26 @@ sealed interface Detail {
     data class PlaylistDetail(val id: String) : Detail
 }
 
-private val videoPermission =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_VIDEO
-    else Manifest.permission.READ_EXTERNAL_STORAGE
+// En Android 14+ el usuario puede dar acceso solo a algunos videos (READ_MEDIA_VISUAL_USER_SELECTED)
+private val mediaPermissions: Array<String> = when {
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
+        Manifest.permission.READ_MEDIA_VIDEO,
+        Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
+    )
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+    else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+}
+
+private fun Context.isGranted(permission: String) =
+    ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+
+private fun hasMediaPermission(context: Context) =
+    mediaPermissions.any { context.isGranted(it) } || hasAllFilesAccess(context)
+
+/** Permiso para recorrer todo el almacenamiento archivo por archivo. */
+private fun hasAllFilesAccess(context: Context) =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Environment.isExternalStorageManager()
+    else context.isGranted(Manifest.permission.READ_EXTERNAL_STORAGE)
 
 @Composable
 fun ReproductorApp(
@@ -134,15 +165,78 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val state by viewModel.state.collectAsState()
     val playlists by viewModel.playlists.playlists.collectAsState()
 
-    var granted by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, videoPermission) == PackageManager.PERMISSION_GRANTED
-        )
-    }
+    val settings by viewModel.scanSettings.collectAsState()
+    var granted by remember { mutableStateOf(hasMediaPermission(context)) }
+    var notice by remember { mutableStateOf<String?>(null) }
+    var sourcesDialog by remember { mutableStateOf(false) }
+
     val requestPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted = it }
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        granted = hasMediaPermission(context)
+        if (!granted) {
+            notice = "Sin ese permiso puedes usar \"Escanear todo el teléfono\" o \"Elegir carpetas\". " +
+                "También puedes activarlo en Ajustes > Apps > Reproductor de Video > Permisos."
+        }
+    }
     LaunchedEffect(granted) { if (granted) viewModel.onPermissionGranted() }
+
+    // Al volver de Ajustes, revisa si cambió algún permiso
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) granted = hasMediaPermission(context)
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val allFilesSettings = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (hasAllFilesAccess(context)) {
+            granted = hasMediaPermission(context)
+            viewModel.setFullScan(true)
+        } else {
+            notice = "Para escanear todo el teléfono activa \"Permitir acceso para administrar todos los archivos\". " +
+                "Si prefieres no hacerlo, usa \"Elegir carpetas\"."
+        }
+    }
+    val legacyStorage = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        if (ok) {
+            granted = hasMediaPermission(context)
+            viewModel.setFullScan(true)
+        } else {
+            notice = "Sin permiso de almacenamiento no puedo escanear el teléfono."
+        }
+    }
+    val requestFullScan: () -> Unit = {
+        when {
+            hasAllFilesAccess(context) -> viewModel.setFullScan(true)
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> {
+                val appScreen = Intent(
+                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                )
+                try {
+                    allFilesSettings.launch(appScreen)
+                } catch (e: ActivityNotFoundException) {
+                    allFilesSettings.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+            }
+            else -> legacyStorage.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            // Guarda el permiso para poder volver a leer la carpeta al abrir la app otra vez
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            viewModel.addFolder(uri)
+        }
+    }
+    val canShowLibrary = granted || settings.fullScan || settings.folders.isNotEmpty()
 
     var tab by rememberSaveable { mutableStateOf(Tab.VIDEOS) }
     var detail by remember { mutableStateOf<Detail?>(null) }
@@ -238,7 +332,11 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                                     onPlay(PlaybackRequest(listOf(QueueItem(Uri.parse(SAMPLE_VIDEO_URL), "Big Buck Bunny"))))
                                 },
                             )
-                            if (granted) {
+                            DropdownMenuItem(
+                                text = { Text("Carpetas a escanear…") },
+                                onClick = { menuOpen = false; sourcesDialog = true },
+                            )
+                            if (canShowLibrary) {
                                 DropdownMenuItem(
                                     text = { Text("Actualizar biblioteca") },
                                     onClick = { menuOpen = false; viewModel.refresh() },
@@ -275,13 +373,30 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     onClose = { detail = null },
                     onPlay = onPlay,
                 )
-                !granted -> PermissionRequest(
-                    onRequest = { requestPermission.launch(videoPermission) },
+                !canShowLibrary -> VideoSources(
+                    message = "Elige cómo encontrar tus videos. Puedes usar varias opciones a la vez.",
+                    showMediaButton = true,
+                    onMedia = { requestPermission.launch(mediaPermissions) },
+                    onFullScan = requestFullScan,
+                    onPickFolder = { pickFolder.launch(null) },
                     onOpenFile = { openFile.launch(arrayOf("video/*")) },
                 )
                 !state.loaded -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
+                state.videos.isEmpty() -> VideoSources(
+                    message = buildString {
+                        append("No encontré videos")
+                        append(" (biblioteca de Android: ${state.fromAndroid}, escaneo de carpetas: ${state.fromScan}).")
+                        state.error?.let { append("\n\n").append(it) }
+                        append("\n\nPrueba a escanear todo el teléfono o elige las carpetas donde guardas tus videos.")
+                    },
+                    showMediaButton = !granted,
+                    onMedia = { requestPermission.launch(mediaPermissions) },
+                    onFullScan = requestFullScan,
+                    onPickFolder = { pickFolder.launch(null) },
+                    onOpenFile = { openFile.launch(arrayOf("video/*")) },
+                )
                 else -> when (tab) {
                     Tab.VIDEOS -> VideosTab(
                         videos = state.videos, sort = sort, query = query, play = play, askAdd = askAdd,
@@ -319,6 +434,27 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
         }
     }
 
+    if (sourcesDialog) {
+        ScanSourcesDialog(
+            settings = settings,
+            mediaGranted = granted,
+            folderName = viewModel::folderName,
+            onDismiss = { sourcesDialog = false },
+            onMedia = { requestPermission.launch(mediaPermissions) },
+            onFullScanChange = { enabled -> if (enabled) requestFullScan() else viewModel.setFullScan(false) },
+            onAddFolder = { pickFolder.launch(null) },
+            onRemoveFolder = viewModel::removeFolder,
+        )
+    }
+
+    notice?.let { text ->
+        AlertDialog(
+            onDismissRequest = { notice = null },
+            text = { Text(text) },
+            confirmButton = { TextButton(onClick = { notice = null }) { Text("Entendido") } },
+        )
+    }
+
     if (urlDialog) {
         UrlDialog(
             onDismiss = { urlDialog = false },
@@ -348,22 +484,93 @@ private fun detailTitle(detail: Detail?, state: LibraryState, playlistNames: Map
     }
 
 @Composable
-private fun PermissionRequest(onRequest: () -> Unit, onOpenFile: () -> Unit) {
+private fun VideoSources(
+    message: String,
+    showMediaButton: Boolean,
+    onMedia: () -> Unit,
+    onFullScan: () -> Unit,
+    onPickFolder: () -> Unit,
+    onOpenFile: () -> Unit,
+) {
     Column(
-        modifier = Modifier.fillMaxSize().padding(32.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            "Para mostrar tu biblioteca, la app necesita permiso para ver los videos del teléfono.",
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-        )
+        Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
         Spacer(Modifier.height(24.dp))
-        Button(onClick = onRequest) { Text("Permitir acceso a videos") }
+        if (showMediaButton) {
+            Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Text("Usar la galería de Android") }
+            Spacer(Modifier.height(12.dp))
+        }
+        Button(onClick = onFullScan, modifier = Modifier.fillMaxWidth()) { Text("Escanear todo el teléfono") }
         Spacer(Modifier.height(12.dp))
-        OutlinedButton(onClick = onOpenFile) { Text("Abrir un archivo sin dar permiso") }
+        OutlinedButton(onClick = onPickFolder, modifier = Modifier.fillMaxWidth()) { Text("Elegir carpetas para escanear") }
+        Spacer(Modifier.height(12.dp))
+        TextButton(onClick = onOpenFile) { Text("Abrir un solo archivo") }
     }
+}
+
+/** Ajustes de dónde buscar videos: galería de Android, todo el teléfono y carpetas elegidas. */
+@Composable
+private fun ScanSourcesDialog(
+    settings: ScanSettings,
+    mediaGranted: Boolean,
+    folderName: (String) -> String,
+    onDismiss: () -> Unit,
+    onMedia: () -> Unit,
+    onFullScanChange: (Boolean) -> Unit,
+    onAddFolder: () -> Unit,
+    onRemoveFolder: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Dónde buscar videos") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Galería de Android", Modifier.weight(1f))
+                    if (mediaGranted) Text("Activada", color = MaterialTheme.colorScheme.primary)
+                    else TextButton(onClick = onMedia) { Text("Permitir") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Escanear todo el teléfono")
+                        Text(
+                            "Revisa memoria interna y tarjeta SD, incluidas carpetas ocultas a la galería.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = settings.fullScan, onCheckedChange = onFullScanChange)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Carpetas elegidas", style = MaterialTheme.typography.titleSmall)
+                if (settings.folders.isEmpty()) {
+                    Text(
+                        "Ninguna todavía.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                settings.folders.forEach { tree ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Folder, contentDescription = null)
+                        Text(
+                            folderName(tree),
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            maxLines = 2,
+                        )
+                        IconButton(onClick = { onRemoveFolder(tree) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Quitar carpeta")
+                        }
+                    }
+                }
+                TextButton(onClick = onAddFolder) { Text("Agregar carpeta…") }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Listo") } },
+    )
 }
 
 @Composable

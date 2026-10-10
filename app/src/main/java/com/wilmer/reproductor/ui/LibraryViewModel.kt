@@ -2,13 +2,17 @@ package com.wilmer.reproductor.ui
 
 import android.app.Application
 import android.database.ContentObserver
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wilmer.reproductor.classify.VideoClassifier
 import com.wilmer.reproductor.classify.VideoKind
+import com.wilmer.reproductor.data.FileScanner
 import com.wilmer.reproductor.data.PlaylistStore
+import com.wilmer.reproductor.data.ScanSettings
+import com.wilmer.reproductor.data.ScanSettingsStore
 import com.wilmer.reproductor.data.Video
 import com.wilmer.reproductor.data.VideoRepository
 import kotlinx.coroutines.Job
@@ -38,6 +42,10 @@ data class LibraryState(
     val shows: List<Show> = emptyList(),
     val others: List<Video> = emptyList(),
     val folders: List<Folder> = emptyList(),
+    /** Cuántos videos dio la biblioteca de Android y cuántos el escaneo de carpetas. */
+    val fromAndroid: Int = 0,
+    val fromScan: Int = 0,
+    val error: String? = null,
 ) {
     val byUri: Map<String, Video> by lazy { videos.associateBy { it.uri.toString() } }
 }
@@ -45,13 +53,40 @@ data class LibraryState(
 class LibraryViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repository = VideoRepository(app)
+    private val scanner = FileScanner(app)
+    private val scanStore = ScanSettingsStore(app)
     val playlists = PlaylistStore(app)
+    val scanSettings: StateFlow<ScanSettings> = scanStore.settings
 
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     private var observer: ContentObserver? = null
     private var reloadJob: Job? = null
+
+    init {
+        val settings = scanStore.settings.value
+        if (settings.fullScan || settings.folders.isNotEmpty()) refresh()
+    }
+
+    fun setFullScan(enabled: Boolean) {
+        scanStore.setFullScan(enabled)
+        refresh()
+    }
+
+    fun addFolder(tree: Uri) {
+        scanStore.addFolder(tree.toString())
+        refresh()
+    }
+
+    fun removeFolder(tree: String) {
+        scanStore.removeFolder(tree)
+        refresh()
+    }
+
+    fun folderName(tree: String): String =
+        scanner.folderName(Uri.parse(tree))
+            ?: Uri.decode(tree).substringAfterLast(':').ifEmpty { tree }
 
     /** Se llama cuando ya hay permiso para leer los videos del teléfono. */
     fun onPermissionGranted() {
@@ -64,7 +99,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
                     .registerContentObserver(repository.collection, true, it)
             }
         }
-        if (!_state.value.loaded) refresh()
+        refresh()
     }
 
     fun refresh(debounce: Boolean = false) {
@@ -72,8 +107,36 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
         reloadJob = viewModelScope.launch {
             if (debounce) delay(800)
             _state.update { it.copy(loading = true) }
-            val videos = runCatching { repository.loadVideos() }.getOrDefault(emptyList())
-            _state.value = buildState(videos)
+            val errors = mutableListOf<String>()
+            val fromAndroid = if (observer != null) {
+                runCatching { repository.loadVideos() }
+                    .onFailure { errors += "biblioteca de Android: ${it.message}" }
+                    .getOrDefault(emptyList())
+            } else {
+                emptyList()
+            }
+            val settings = scanStore.settings.value
+            val scanned = buildList {
+                if (settings.fullScan) {
+                    runCatching { scanner.scanStorage() }
+                        .onSuccess { addAll(it) }
+                        .onFailure { errors += "escaneo del teléfono: ${it.message}" }
+                }
+                settings.folders.forEach { tree ->
+                    runCatching { scanner.scanTree(Uri.parse(tree)) }
+                        .onSuccess { addAll(it) }
+                        .onFailure { errors += "carpeta: ${it.message}" }
+                }
+            }
+            // Un mismo archivo puede salir por los dos caminos: se queda la versión de Android
+            val seen = fromAndroid.map { it.fileName to it.sizeBytes }.toHashSet()
+            val extra = scanned.distinctBy { it.uri.toString() }
+                .filter { seen.add(it.fileName to it.sizeBytes) }
+            _state.value = buildState(fromAndroid + extra).copy(
+                fromAndroid = fromAndroid.size,
+                fromScan = scanned.size,
+                error = errors.firstOrNull()?.let { "Error al leer la $it" },
+            )
         }
     }
 
