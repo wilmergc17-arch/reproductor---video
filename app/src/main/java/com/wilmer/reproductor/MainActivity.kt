@@ -7,7 +7,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Rational
+import android.graphics.Color
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -18,7 +20,7 @@ import com.wilmer.reproductor.ui.LibraryViewModel
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
 import com.wilmer.reproductor.ui.ReproductorApp
-import com.wilmer.reproductor.ui.theme.ReproductorTheme
+import com.wilmer.reproductor.ui.theme.RepropowerTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -32,12 +34,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // La app siempre es oscura: íconos claros en las barras aunque el teléfono use tema claro
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+        )
         if (savedInstanceState == null) {
             playback = intent.playbackOrNull()
         }
         setContent {
-            ReproductorTheme {
+            RepropowerTheme {
                 ReproductorApp(
                     library = library,
                     playback = playback,

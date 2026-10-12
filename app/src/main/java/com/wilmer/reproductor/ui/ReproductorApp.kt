@@ -5,6 +5,19 @@ import android.app.Activity
 import androidx.activity.result.IntentSenderRequest
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import com.wilmer.reproductor.ui.theme.BrandGradientHorizontal
 import androidx.compose.runtime.rememberCoroutineScope
 import com.wilmer.reproductor.data.DeleteResult
 import kotlinx.coroutines.launch
@@ -62,8 +75,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -87,6 +98,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.wilmer.reproductor.data.PlaylistEntry
@@ -197,7 +209,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
         granted = hasMediaPermission(context)
         if (!granted) {
             notice = "Sin ese permiso puedes usar \"Escanear todo el teléfono\" o \"Elegir carpetas\". " +
-                "También puedes activarlo en Ajustes > Apps > Reproductor de Video > Permisos."
+                "También puedes activarlo en Ajustes > Apps > Repropower > Permisos."
         }
     }
     LaunchedEffect(granted) { if (granted) viewModel.onPermissionGranted() }
@@ -326,6 +338,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     Scaffold(
         topBar = {
             if (selection.active) TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                ),
                 navigationIcon = {
                     IconButton(onClick = { selection.clear() }) {
                         Icon(Icons.Default.Close, contentDescription = "Quitar selección")
@@ -356,7 +371,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         Icon(Icons.Default.Delete, contentDescription = "Eliminar seleccionados del teléfono")
                     }
                 },
-            ) else TopAppBar(
+            ) else Column {
+            TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
                 navigationIcon = {
                     if (detail != null) {
                         IconButton(onClick = { detail = null }) {
@@ -369,16 +386,25 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         TextField(
                             value = query,
                             onValueChange = { query = it },
-                            placeholder = { Text("Buscar…") },
+                            placeholder = { Text("Buscar en ${tab.label.lowercase()}…") },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                             singleLine = true,
+                            shape = CircleShape,
                             colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
                             ),
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier.fillMaxWidth().padding(end = 4.dp),
                         )
                     } else {
-                        Text(detailTitle(detail, state, playlists.associate { it.id to it.name }) ?: tab.label)
+                        val title = detailTitle(detail, state, playlists.associate { it.id to it.name })
+                        if (title != null) {
+                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        } else {
+                            BrandTitle()
+                        }
                     }
                 },
                 actions = {
@@ -442,22 +468,30 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     }
                 },
             )
-        },
-        bottomBar = {
-            NavigationBar {
-                Tab.entries.forEach { t ->
-                    NavigationBarItem(
-                        selected = t == tab,
-                        onClick = { tab = t; detail = null },
-                        icon = { Icon(t.icon, contentDescription = null) },
-                        label = { Text(t.label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
-                    )
-                }
+            if (detail == null) {
+                TabPills(
+                    selected = tab,
+                    counts = mapOf(
+                        Tab.VIDEOS to state.videos.size,
+                        Tab.CARPETAS to state.folders.size,
+                        Tab.PELICULAS to state.movies.size,
+                        Tab.SERIES to state.shows.size,
+                        Tab.REELS to state.reels.size,
+                        Tab.LISTAS to playlists.size,
+                    ),
+                    onSelect = { tab = it; detail = null },
+                )
+            }
             }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if (state.loading) {
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth(),
+                    trackColor = Color.Transparent,
+                )
+            }
             when {
                 tab == Tab.LISTAS -> PlaylistsTab(
                     playlists = playlists,
@@ -506,9 +540,11 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         play = play,
                         askAdd = askAdd,
                     )
-                    Tab.PELICULAS -> VideoList(
+                    Tab.PELICULAS -> VideoGrid(
                         videos = state.movies.filter { it.matchesQuery(query) }.sortedFor(sort),
                         empty = "No hay películas: aquí aparecen los videos de una hora o más.",
+                        columns = 2,
+                        aspectRatio = 16f / 9f,
                         play = play,
                         askAdd = askAdd,
                     )
@@ -525,9 +561,11 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                             detail = null
                         },
                     )
-                    Tab.REELS -> VideoList(
+                    Tab.REELS -> VideoGrid(
                         videos = state.reels.filter { it.matchesQuery(query) }.sortedFor(sort),
                         empty = "No hay reels: aquí aparecen los videos de menos de 10 minutos.",
+                        columns = 3,
+                        aspectRatio = 9f / 16f,
                         play = play,
                         askAdd = askAdd,
                     )
@@ -609,6 +647,51 @@ private fun detailTitle(detail: Detail?, state: LibraryState, playlistNames: Map
         null -> null
     }
 
+/** Pestañas como píldoras deslizables; la elegida lleva el degradado de la marca. */
+@Composable
+private fun TabPills(selected: Tab, counts: Map<Tab, Int>, onSelect: (Tab) -> Unit) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        items(Tab.entries) { t ->
+            val on = t == selected
+            Row(
+                Modifier
+                    .clip(CircleShape)
+                    .background(
+                        if (on) BrandGradientHorizontal else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    )
+                    .clickable { onSelect(t) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    t.icon,
+                    contentDescription = null,
+                    tint = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    t.label,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (on) Color.White else MaterialTheme.colorScheme.onSurface,
+                )
+                val count = counts[t] ?: 0
+                if (count > 0) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "$count",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (on) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun VideoSources(
     message: String,
@@ -619,21 +702,51 @@ private fun VideoSources(
     onOpenFile: () -> Unit,
 ) {
     Column(
-        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 28.dp, vertical = 24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(message, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(24.dp))
+        BrandLogo(size = 96.dp)
+        Spacer(Modifier.height(20.dp))
+        Text(brandName(), style = MaterialTheme.typography.headlineMedium)
+        Spacer(Modifier.height(10.dp))
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(28.dp))
         if (showMediaButton) {
-            Button(onClick = onMedia, modifier = Modifier.fillMaxWidth()) { Text("Usar la galería de Android") }
+            GradientButton(
+                "Usar la galería de Android",
+                onClick = onMedia,
+                icon = Icons.Default.VideoLibrary,
+                modifier = Modifier.fillMaxWidth(),
+            )
             Spacer(Modifier.height(12.dp))
+            SourceButton("Escanear todo el teléfono", Icons.Default.PhoneAndroid, onFullScan)
+        } else {
+            GradientButton(
+                "Escanear todo el teléfono",
+                onClick = onFullScan,
+                icon = Icons.Default.PhoneAndroid,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
-        Button(onClick = onFullScan, modifier = Modifier.fillMaxWidth()) { Text("Escanear todo el teléfono") }
         Spacer(Modifier.height(12.dp))
-        OutlinedButton(onClick = onPickFolder, modifier = Modifier.fillMaxWidth()) { Text("Elegir carpetas para escanear") }
+        SourceButton("Elegir carpetas para escanear", Icons.Default.Folder, onPickFolder)
         Spacer(Modifier.height(12.dp))
         TextButton(onClick = onOpenFile) { Text("Abrir un solo archivo") }
+    }
+}
+
+@Composable
+private fun SourceButton(text: String, icon: ImageVector, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text)
     }
 }
 

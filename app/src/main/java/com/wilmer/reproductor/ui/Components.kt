@@ -3,6 +3,35 @@ package com.wilmer.reproductor.ui
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
+import com.wilmer.reproductor.R
+import com.wilmer.reproductor.ui.theme.BrandGradient
+import com.wilmer.reproductor.ui.theme.BrandGradientHorizontal
+import com.wilmer.reproductor.ui.theme.EpisodeColor
+import com.wilmer.reproductor.ui.theme.MovieColor
+import com.wilmer.reproductor.ui.theme.ReelColor
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -22,8 +51,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -105,15 +132,15 @@ fun Video.matchesQuery(query: String) =
         ((kind as? VideoKind.Episode)?.show?.matchesQuery(query) ?: false)
 
 @Composable
-fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier, durationMs: Long = 0) {
+fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier, durationMs: Long = 0, corner: Dp = 12.dp) {
     val context = LocalContext.current
     val bitmap by produceState(Thumbnails.cached(uri), uri) {
         if (value == null) value = Thumbnails.load(context, uri)
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(6.dp))
-            .background(Color(0xFF263238)),
+            .clip(RoundedCornerShape(corner))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
         contentAlignment = Alignment.Center,
     ) {
         val b = bitmap
@@ -125,19 +152,135 @@ fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier, durationMs: Long = 0
                 modifier = Modifier.fillMaxSize(),
             )
         } else {
-            Icon(Icons.Default.Movie, contentDescription = null, tint = Color.White.copy(alpha = 0.6f))
+            Icon(
+                Icons.Default.Movie,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
         }
         if (durationMs > 0) {
+            // Sombra suave abajo para que la duración se lea sobre cualquier imagen
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(32.dp)
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)))),
+            )
             Text(
                 text = formatDuration(durationMs),
                 color = Color.White,
                 style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(3.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(3.dp))
-                    .padding(horizontal = 4.dp, vertical = 1.dp),
+                    .padding(6.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    .padding(horizontal = 6.dp, vertical = 1.dp),
             )
+        }
+    }
+}
+
+/** Nombre de la app con "power" en el degradado de la marca. */
+@OptIn(ExperimentalTextApi::class)
+fun brandName(): AnnotatedString = buildAnnotatedString {
+    append("Repro")
+    withStyle(SpanStyle(brush = BrandGradientHorizontal)) { append("power") }
+}
+
+/** Logo de Repropower: el mismo dibujo que el ícono de la app, en un círculo. */
+@Composable
+fun BrandLogo(modifier: Modifier = Modifier, size: Dp = 32.dp) {
+    Box(
+        modifier.size(size).clip(CircleShape).background(BrandGradient),
+        contentAlignment = Alignment.Center,
+    ) {
+        // El ícono adaptable mide 108 y su zona visible 66: se agranda y el círculo recorta el resto
+        Image(
+            painter = painterResource(R.drawable.ic_launcher_foreground),
+            contentDescription = null,
+            modifier = Modifier.requiredSize(size * (108f / 66f)),
+        )
+    }
+}
+
+@Composable
+fun BrandTitle(modifier: Modifier = Modifier) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        BrandLogo(size = 30.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(brandName(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+    }
+}
+
+/** Botón principal con el degradado de la marca. */
+@Composable
+fun GradientButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier
+            .clip(CircleShape)
+            .background(
+                if (enabled) BrandGradientHorizontal else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            val color = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+            icon?.let {
+                Icon(it, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(text, style = MaterialTheme.typography.labelLarge, color = color)
+        }
+    }
+}
+
+/** Etiqueta de color con el tipo del video (Película, Serie, Reel). */
+data class KindLabel(val text: String, val color: Color)
+
+fun Video.kindLabel(): KindLabel? = when (kind) {
+    is VideoKind.Movie -> KindLabel("Película", MovieColor)
+    is VideoKind.Episode -> KindLabel("Serie", EpisodeColor)
+    is VideoKind.Reel -> KindLabel("Reel", ReelColor)
+    is VideoKind.Other -> null
+}
+
+@Composable
+fun KindBadge(label: KindLabel, modifier: Modifier = Modifier) {
+    Text(
+        label.text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = label.color,
+        maxLines = 1,
+        modifier = modifier
+            .background(label.color.copy(alpha = 0.15f), CircleShape)
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/** Círculo de selección sobre la miniatura. */
+@Composable
+fun SelectionMark(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(if (selected) BrandGradient else SolidColor(Color.Black.copy(alpha = 0.45f)))
+            .border(2.dp, Color.White, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = "Seleccionado", tint = Color.White, modifier = Modifier.size(16.dp))
         }
     }
 }
@@ -184,48 +327,57 @@ fun VideoRow(
     onLongClick: (() -> Unit)? = null,
     selectionMode: Boolean = false,
     selected: Boolean = false,
+    badge: KindLabel? = null,
     menu: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    val primary = MaterialTheme.colorScheme.primary
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(shape)
+            .background(if (selected) primary.copy(alpha = 0.14f) else Color.Transparent)
+            .then(if (selected) Modifier.border(1.dp, primary.copy(alpha = 0.6f), shape) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
-            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = if (selectionMode) 12.dp else 0.dp),
+            .padding(start = 8.dp, top = 6.dp, bottom = 6.dp, end = if (selectionMode) 8.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
-            VideoThumbnail(uri, Modifier.width(128.dp).height(72.dp), durationMs)
-            if (selectionMode) {
-                Icon(
-                    if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                    contentDescription = if (selected) "Seleccionado" else "Sin seleccionar",
-                    tint = if (selected) MaterialTheme.colorScheme.primary else Color.White,
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(4.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
-                )
-            }
+            VideoThumbnail(uri, Modifier.width(136.dp).height(78.dp), durationMs)
+            if (selectionMode) SelectionMark(selected, Modifier.align(Alignment.TopStart).padding(6.dp))
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (subtitle.isNotEmpty()) {
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            if (badge != null || subtitle.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    badge?.let {
+                        KindBadge(it)
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    if (subtitle.isNotEmpty()) {
+                        Text(
+                            subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
         if (!selectionMode) {
             Box {
                 IconButton(onClick = { menuOpen = true }) {
-                    Icon(Icons.Default.MoreVert, contentDescription = "Opciones")
+                    Icon(
+                        Icons.Default.MoreVert,
+                        contentDescription = "Opciones",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                     menu { menuOpen = false }
@@ -235,17 +387,50 @@ fun VideoRow(
     }
 }
 
+/** Acciones de un video de la biblioteca (menú ⋮ de filas y tarjetas). */
+@Composable
+fun LibraryVideoMenu(video: Video, dismiss: () -> Unit, onPlay: () -> Unit, onAddToPlaylist: () -> Unit) {
+    val selection = LocalSelection.current
+    val deleteRequest = LocalDeleteRequest.current
+    val context = LocalContext.current
+    MenuItem("Reproducir", Icons.Default.PlayArrow) { dismiss(); onPlay() }
+    MenuItem("Agregar a lista", Icons.Default.PlaylistAdd) { dismiss(); onAddToPlaylist() }
+    MenuItem("Compartir", Icons.Default.Share) { dismiss(); shareVideos(context, listOf(video.uri)) }
+    if (selection != null) {
+        MenuItem("Seleccionar varios", Icons.Default.Check) { dismiss(); selection.toggle(video) }
+    }
+    deleteRequest?.let { request ->
+        MenuItem("Eliminar del teléfono", Icons.Default.Delete, MaterialTheme.colorScheme.error) {
+            dismiss(); request(listOf(video))
+        }
+    }
+}
+
+@Composable
+fun MenuItem(text: String, icon: ImageVector, color: Color = Color.Unspecified, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(text, color = color) },
+        leadingIcon = {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else color,
+            )
+        },
+        onClick = onClick,
+    )
+}
+
 @Composable
 fun LibraryVideoRow(
     video: Video,
     onClick: () -> Unit,
     onAddToPlaylist: () -> Unit,
     subtitle: String = "${video.folder} · ${formatSize(video.sizeBytes)}",
+    showBadge: Boolean = true,
 ) {
     // Mantener presionado marca el video; con algo marcado, tocar marca o desmarca
     val selection = LocalSelection.current
-    val deleteRequest = LocalDeleteRequest.current
-    val context = LocalContext.current
     val selectionMode = selection?.active == true
     VideoRow(
         uri = video.uri,
@@ -256,16 +441,69 @@ fun LibraryVideoRow(
         onLongClick = selection?.let { s -> { s.toggle(video) } },
         selectionMode = selectionMode,
         selected = selection?.uris?.contains(video.uri.toString()) == true,
+        badge = if (showBadge) video.kindLabel() else null,
     ) { dismiss ->
-        DropdownMenuItem(text = { Text("Reproducir") }, onClick = { dismiss(); onClick() })
-        DropdownMenuItem(text = { Text("Agregar a lista") }, onClick = { dismiss(); onAddToPlaylist() })
-        DropdownMenuItem(text = { Text("Compartir") }, onClick = { dismiss(); shareVideos(context, listOf(video.uri)) })
-        if (selection != null) {
-            DropdownMenuItem(text = { Text("Seleccionar varios") }, onClick = { dismiss(); selection.toggle(video) })
+        LibraryVideoMenu(video, dismiss, onPlay = onClick, onAddToPlaylist = onAddToPlaylist)
+    }
+}
+
+/** Tarjeta de un video para las cuadrículas de Películas y Reels. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun LibraryVideoCard(video: Video, aspectRatio: Float, onClick: () -> Unit, onAddToPlaylist: () -> Unit) {
+    val selection = LocalSelection.current
+    val selectionMode = selection?.active == true
+    val selected = selection?.uris?.contains(video.uri.toString()) == true
+    var menuOpen by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(18.dp)
+    Column(
+        Modifier
+            .padding(5.dp)
+            .clip(shape)
+            .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+            .combinedClickable(
+                onClick = { if (selection != null && selection.active) selection.toggle(video) else onClick() },
+                onLongClick = selection?.let { s -> { s.toggle(video) } },
+            ),
+    ) {
+        Box {
+            VideoThumbnail(
+                video.uri,
+                Modifier.fillMaxWidth().aspectRatio(aspectRatio),
+                video.durationMs,
+                corner = 18.dp,
+            )
+            if (selectionMode) {
+                SelectionMark(selected, Modifier.align(Alignment.TopStart).padding(8.dp))
+            } else {
+                Box(Modifier.align(Alignment.TopEnd)) {
+                    IconButton(
+                        onClick = { menuOpen = true },
+                        modifier = Modifier.padding(4.dp).size(32.dp).background(Color.Black.copy(alpha = 0.45f), CircleShape),
+                    ) {
+                        Icon(Icons.Default.MoreVert, contentDescription = "Opciones", tint = Color.White, modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        LibraryVideoMenu(video, { menuOpen = false }, onPlay = onClick, onAddToPlaylist = onAddToPlaylist)
+                    }
+                }
+            }
         }
-        deleteRequest?.let { request ->
-            DropdownMenuItem(text = { Text("Eliminar del teléfono") }, onClick = { dismiss(); request(listOf(video)) })
-        }
+        Text(
+            video.displayTitle(),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp),
+        )
+        Text(
+            formatSize(video.sizeBytes),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            modifier = Modifier.padding(start = 4.dp, end = 4.dp, bottom = 6.dp),
+        )
     }
 }
 
@@ -338,9 +576,28 @@ fun NameDialog(title: String, initial: String, onDismiss: () -> Unit, onConfirm:
 }
 
 @Composable
-fun EmptyMessage(text: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+fun EmptyMessage(text: String, modifier: Modifier = Modifier, icon: ImageVector = Icons.Default.VideoLibrary) {
+    Column(
+        modifier.fillMaxSize().padding(32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

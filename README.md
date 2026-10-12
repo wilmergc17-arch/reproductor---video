@@ -1,8 +1,15 @@
-# Reproductor de Video (Android)
+# Repropower (Android)
 
-App Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
+Reproductor de video para Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.5.0)
+## Qué hace (versión 0.6.0)
+
+### Diseño
+- Tema oscuro con el degradado de la marca (naranja, rosa, violeta) y un ícono nuevo: botón de reproducir con un rayo.
+- Pestañas como píldoras deslizables arriba, con el número de videos de cada una.
+- Filas con miniaturas redondeadas y etiqueta de color por tipo (Película, Serie, Reel); Películas en cuadrícula de 2 columnas y Reels en cuadrícula vertical de 3.
+- Controles del reproductor con sombras degradadas, botón de reproducir con el degradado y botones de cristal.
+- El paquete sigue siendo `com.wilmer.reproductor`, así que se instala encima de la versión anterior sin perder la biblioteca ni las listas.
 
 ### Biblioteca
 - Tres formas de encontrar videos, combinables desde el menú ⋮ > "Carpetas a escanear…":

@@ -18,7 +18,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import com.wilmer.reproductor.ui.theme.BrandGradient
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AspectRatio
@@ -59,6 +62,9 @@ import androidx.media3.common.Player
 import com.wilmer.reproductor.ui.formatDuration
 
 private val Scrim = Color.Black.copy(alpha = 0.55f)
+private val Glass = Color.White.copy(alpha = 0.12f)
+private val TopShade = Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.75f), Color.Transparent))
+private val BottomShade = Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))
 
 /** Controles superpuestos al video, al estilo de VLC. */
 @Composable
@@ -111,9 +117,9 @@ fun PlayerControls(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 72.dp)
-                    .background(Scrim, RoundedCornerShape(8.dp))
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                    .padding(top = 88.dp)
+                    .background(Scrim, CircleShape)
+                    .padding(horizontal = 20.dp, vertical = 10.dp),
             )
         }
 
@@ -121,8 +127,8 @@ fun PlayerControls(
             Column(
                 Modifier
                     .align(Alignment.Center)
-                    .background(Scrim, RoundedCornerShape(12.dp))
-                    .padding(20.dp),
+                    .background(Scrim, RoundedCornerShape(24.dp))
+                    .padding(24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(it, color = Color.White)
@@ -138,6 +144,7 @@ fun PlayerControls(
                 ControlIcon(
                     Icons.Default.Lock, "Desbloquear", act(onLockToggle),
                     Modifier.align(Alignment.CenterStart).padding(16.dp),
+                    filled = true,
                 )
             }
         }
@@ -148,9 +155,9 @@ fun PlayerControls(
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .background(Scrim)
+                        .background(TopShade)
                         .safeDrawingPadding()
-                        .padding(horizontal = 4.dp),
+                        .padding(start = 4.dp, end = 4.dp, bottom = 24.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ControlIcon(Icons.AutoMirrored.Filled.ArrowBack, "Volver", onBack)
@@ -164,7 +171,7 @@ fun PlayerControls(
                     )
                     ControlIcon(Icons.Default.Audiotrack, "Pista de audio", act(onAudio))
                     ControlIcon(Icons.Default.Subtitles, "Subtítulos", act(onSubtitles))
-                    TextButton(onClick = act(onSpeed)) {
+                    TextButton(onClick = act(onSpeed), modifier = Modifier.background(Glass, CircleShape)) {
                         Icon(Icons.Default.Speed, contentDescription = "Velocidad", tint = Color.White)
                         Spacer(Modifier.width(4.dp))
                         Text(speedLabel(speed), color = Color.White)
@@ -177,23 +184,23 @@ fun PlayerControls(
                 Row(
                     Modifier.align(Alignment.Center),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    ControlIcon(Icons.Default.SkipPrevious, "Anterior", act(onPrevious), size = 40, enabled = true)
-                    ControlIcon(Icons.Default.Replay10, "Atrasar 10 segundos", act(onSeekBack), size = 40)
+                    ControlIcon(Icons.Default.SkipPrevious, "Anterior", act(onPrevious), size = 30, enabled = true)
+                    ControlIcon(Icons.Default.Replay10, "Atrasar 10 segundos", act(onSeekBack), size = 30, filled = true)
                     IconButton(
                         onClick = act(onPlayPause),
-                        modifier = Modifier.size(80.dp).background(Scrim, RoundedCornerShape(40.dp)),
+                        modifier = Modifier.size(78.dp).background(BrandGradient, CircleShape),
                     ) {
                         Icon(
                             if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                             contentDescription = if (isPlaying) "Pausa" else "Reproducir",
                             tint = Color.White,
-                            modifier = Modifier.size(56.dp),
+                            modifier = Modifier.size(46.dp),
                         )
                     }
-                    ControlIcon(Icons.Default.Forward10, "Adelantar 10 segundos", act(onSeekForward), size = 40)
-                    ControlIcon(Icons.Default.SkipNext, "Siguiente", act(onNext), size = 40, enabled = hasNext)
+                    ControlIcon(Icons.Default.Forward10, "Adelantar 10 segundos", act(onSeekForward), size = 30, filled = true)
+                    ControlIcon(Icons.Default.SkipNext, "Siguiente", act(onNext), size = 30, enabled = hasNext)
                 }
 
                 // Barra inferior: progreso y opciones
@@ -201,9 +208,9 @@ fun PlayerControls(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .background(Scrim)
+                        .background(BottomShade)
                         .safeDrawingPadding()
-                        .padding(horizontal = 12.dp),
+                        .padding(start = 12.dp, end = 12.dp, top = 32.dp, bottom = 4.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(formatDuration(positionMs), color = Color.White, style = MaterialTheme.typography.labelMedium)
@@ -213,16 +220,20 @@ fun PlayerControls(
                             onValueChangeFinished = onSeekFinished,
                             enabled = durationMs > 0,
                             colors = SliderDefaults.colors(
-                                thumbColor = MaterialTheme.colorScheme.primary,
+                                thumbColor = Color.White,
                                 activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(alpha = if (bufferedMs > positionMs) 0.45f else 0.3f),
+                                inactiveTrackColor = Color.White.copy(alpha = if (bufferedMs > positionMs) 0.4f else 0.25f),
                             ),
                             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                         )
                         Text(formatDuration(durationMs), color = Color.White, style = MaterialTheme.typography.labelMedium)
                     }
                     Row(
-                        Modifier.fillMaxWidth(),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .background(Color.White.copy(alpha = 0.08f), CircleShape)
+                            .padding(horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -252,8 +263,15 @@ private fun ControlIcon(
     size: Int = 26,
     enabled: Boolean = true,
     highlighted: Boolean = false,
+    filled: Boolean = false,
 ) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = modifier.size((size + 22).dp)) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier
+            .size((size + 22).dp)
+            .then(if (filled) Modifier.background(Glass, CircleShape) else Modifier),
+    ) {
         Icon(
             icon,
             contentDescription = description,
