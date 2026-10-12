@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpetas desde las que se pueden compartir videos encontrados por el escaneo -->
+<paths>
+    <external-path name="interno" path="." />
+    <!-- Tarjetas SD y otros volúmenes: se montan fuera del almacenamiento interno -->
+    <root-path name="raiz" path="/" />
+</paths>
