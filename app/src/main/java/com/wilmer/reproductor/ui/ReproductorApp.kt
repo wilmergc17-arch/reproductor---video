@@ -39,6 +39,11 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Slideshow
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.PlaylistAdd
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -90,6 +95,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     CARPETAS("Carpetas", Icons.Default.Folder),
     PELICULAS("Películas", Icons.Default.Movie),
     SERIES("Series", Icons.Default.Tv),
+    REELS("Reels", Icons.Default.Slideshow),
     LISTAS("Listas", Icons.Default.PlaylistPlay),
 }
 
@@ -251,6 +257,10 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     BackHandler(enabled = detail != null || searching) {
         if (detail != null) detail = null else { searching = false; query = "" }
     }
+    // Registrado después: con videos marcados, Atrás primero quita la selección
+    val selection = remember { Selection() }
+    BackHandler(enabled = selection.active) { selection.clear() }
+    val selectedVideos: () -> List<Video> = { selection.uris.mapNotNull { state.byUri[it] } }
 
     // Abre cualquier archivo de video, aunque no esté en la biblioteca (mkv, carpetas ocultas…)
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -260,9 +270,35 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val play: (List<Video>, Int) -> Unit = { list, index -> onPlay(PlaybackRequest(list.toQueue(), index)) }
     val askAdd: (List<Video>) -> Unit = { list -> addToPlaylist = list.map { it.toEntry() } }
 
+    CompositionLocalProvider(LocalSelection provides selection) {
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (selection.active) TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { selection.clear() }) {
+                        Icon(Icons.Default.Close, contentDescription = "Quitar selección")
+                    }
+                },
+                title = {
+                    val n = selection.uris.size
+                    Text(if (n == 1) "1 seleccionado" else "$n seleccionados")
+                },
+                actions = {
+                    IconButton(onClick = { selection.selectAll() }) {
+                        Icon(Icons.Default.SelectAll, contentDescription = "Seleccionar todo")
+                    }
+                    IconButton(onClick = {
+                        val list = selectedVideos()
+                        selection.clear()
+                        if (list.isNotEmpty()) play(list, 0)
+                    }) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Reproducir seleccionados")
+                    }
+                    IconButton(onClick = { askAdd(selectedVideos()) }) {
+                        Icon(Icons.Default.PlaylistAdd, contentDescription = "Agregar seleccionados a una lista")
+                    }
+                },
+            ) else TopAppBar(
                 navigationIcon = {
                     if (detail != null) {
                         IconButton(onClick = { detail = null }) {
@@ -339,7 +375,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                             if (canShowLibrary) {
                                 DropdownMenuItem(
                                     text = { Text("Actualizar biblioteca") },
-                                    onClick = { menuOpen = false; viewModel.refresh() },
+                                    onClick = { menuOpen = false; viewModel.refresh(forceScan = true) },
                                 )
                             }
                         }
@@ -354,7 +390,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         selected = t == tab,
                         onClick = { tab = t; detail = null },
                         icon = { Icon(t.icon, contentDescription = null) },
-                        label = { Text(t.label, maxLines = 1) },
+                        label = { Text(t.label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
                     )
                 }
             }
@@ -411,7 +447,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     )
                     Tab.PELICULAS -> VideoList(
                         videos = state.movies.filter { it.matchesQuery(query) },
-                        empty = "No encontré películas. Se reconocen por el año o las etiquetas del nombre (p. ej. \"Coco (2017).mp4\").",
+                        empty = "No hay películas: aquí aparecen los videos de una hora o más.",
                         play = play,
                         askAdd = askAdd,
                     )
@@ -428,10 +464,17 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                             detail = null
                         },
                     )
+                    Tab.REELS -> VideoList(
+                        videos = state.reels.filter { it.matchesQuery(query) },
+                        empty = "No hay reels: aquí aparecen los videos de menos de 10 minutos.",
+                        play = play,
+                        askAdd = askAdd,
+                    )
                     Tab.LISTAS -> Unit
                 }
             }
         }
+    }
     }
 
     if (sourcesDialog) {
@@ -469,8 +512,8 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
         AddToPlaylistDialog(
             playlists = playlists,
             onDismiss = { addToPlaylist = null },
-            onAdd = { p -> viewModel.playlists.add(p.id, entries); addToPlaylist = null },
-            onCreate = { name -> viewModel.playlists.create(name, entries); addToPlaylist = null },
+            onAdd = { p -> viewModel.playlists.add(p.id, entries); addToPlaylist = null; selection.clear() },
+            onCreate = { name -> viewModel.playlists.create(name, entries); addToPlaylist = null; selection.clear() },
         )
     }
 }

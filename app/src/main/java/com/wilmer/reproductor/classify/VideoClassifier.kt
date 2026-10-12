@@ -1,6 +1,6 @@
 package com.wilmer.reproductor.classify
 
-/** Tipo de video deducido solo a partir del nombre del archivo y de su carpeta. */
+/** Tipo de video deducido de su duración, el nombre del archivo y su carpeta. */
 sealed interface VideoKind {
     val title: String
 
@@ -15,19 +15,25 @@ sealed interface VideoKind {
         override val title: String get() = episodeTitle ?: "Episodio $episode"
     }
 
+    /** Video corto (menos de 10 minutos). */
+    data class Reel(override val title: String) : VideoKind
+
+    /** Sin duración conocida ni pistas en el nombre. */
     data class Other(override val title: String) : VideoKind
 }
 
 /**
- * Clasificador local (sin internet): reconoce series y películas por patrones habituales
- * en los nombres de archivo, como "S01E02", "1x02", "Temporada 1 Capítulo 2", años "(2010)"
- * o etiquetas de calidad "1080p BluRay". Archivos de cámara, WhatsApp o grabaciones de
- * pantalla quedan como "Otros".
+ * Clasificador local (sin internet).
+ *
+ * La duración decide el tipo: una hora o más es película, de 10 a 59 minutos es serie y menos
+ * de 10 minutos es reel. El nombre del archivo sirve para agrupar los episodios por serie y
+ * temporada ("S01E02", "1x02", "Temporada 1 Capítulo 2"…) y para limpiar los títulos
+ * ("Coco (2017) 1080p" → "Coco", 2017). Sin duración conocida se decide solo por el nombre.
  */
 object VideoClassifier {
 
-    /** Un video sin pistas en el nombre pero de una hora o más se considera película. */
-    private const val MOVIE_MIN_DURATION_MS = 60 * 60 * 1000L
+    const val MOVIE_MIN_DURATION_MS = 60 * 60 * 1000L
+    const val REEL_MAX_DURATION_MS = 10 * 60 * 1000L
 
     private val EXTENSION = Regex("""\.[A-Za-z0-9]{2,4}$""")
     // Llaves y corchetes escapados: el motor de expresiones de Android (ICU) no acepta "}" suelto
@@ -72,9 +78,30 @@ object VideoClassifier {
     )
 
     fun classify(fileName: String, folderPath: String = "", durationMs: Long = 0): VideoKind {
+        val byName = classifyByName(fileName, folderPath)
+        if (durationMs <= 0) return byName
+        val plainTitle = fileName.replace(EXTENSION, "").let { cleanTitle(normalize(it)).ifEmpty { it } }
+        return when {
+            durationMs >= MOVIE_MIN_DURATION_MS ->
+                byName as? VideoKind.Movie
+                    ?: VideoKind.Movie(if (byName is VideoKind.Other) byName.title else plainTitle, null)
+            durationMs < REEL_MAX_DURATION_MS ->
+                VideoKind.Reel(if (byName is VideoKind.Episode) plainTitle else byName.title)
+            else -> byName as? VideoKind.Episode ?: run {
+                // Serie sin número de episodio en el nombre: se agrupa por su carpeta
+                val folders = splitFolders(folderPath)
+                val season = folders.lastOrNull()?.let { SEASON_FOLDER.matchEntire(it) }
+                    ?.groupValues?.get(1)?.toInt() ?: 1
+                VideoKind.Episode(showFromFolders(folders, useGenericFolder = true), season, 0, byName.title)
+            }
+        }
+    }
+
+    /** Clasificación solo por el nombre, para cuando no se conoce la duración. */
+    private fun classifyByName(fileName: String, folderPath: String): VideoKind {
         val base = fileName.replace(EXTENSION, "")
         val normalized = normalize(base)
-        val folders = folderPath.split('/', '\\').map { it.trim() }.filter { it.isNotEmpty() }
+        val folders = splitFolders(folderPath)
 
         episodeOf(normalized, folders)?.let { return it }
 
@@ -93,7 +120,6 @@ object VideoClassifier {
         if (MOVIE_TAG.containsMatchIn(noDates) || MOVIE_FOLDER.containsMatchIn(folderPath)) {
             return VideoKind.Movie(title, null)
         }
-        if (durationMs >= MOVIE_MIN_DURATION_MS) return VideoKind.Movie(title, null)
         return VideoKind.Other(title)
     }
 
@@ -160,12 +186,16 @@ object VideoClassifier {
         return VideoKind.Episode(show, season, number, rest.ifEmpty { null })
     }
 
-    private fun showFromFolders(folders: List<String>): String =
-        folders.asReversed()
-            .firstOrNull { SEASON_FOLDER.matchEntire(it) == null && it.lowercase() !in GENERIC_FOLDERS }
-            ?.let { cleanTitle(normalize(it)) }
-            ?.ifEmpty { null }
-            ?: "Sin nombre"
+    private fun splitFolders(folderPath: String) =
+        folderPath.split('/', '\\').map { it.trim() }.filter { it.isNotEmpty() }
+
+    private fun showFromFolders(folders: List<String>, useGenericFolder: Boolean = false): String {
+        val candidates = folders.asReversed().filter { SEASON_FOLDER.matchEntire(it) == null }
+        val folder = candidates.firstOrNull { it.lowercase() !in GENERIC_FOLDERS }
+            ?: candidates.firstOrNull()?.takeIf { useGenericFolder }
+        return folder?.let { cleanTitle(normalize(it)) }?.ifEmpty { null }
+            ?: if (useGenericFolder) "Sin carpeta" else "Sin nombre"
+    }
 
     private fun normalize(text: String): String =
         text.replace('.', ' ').replace('_', ' ').replace(SPACES, " ").trim()

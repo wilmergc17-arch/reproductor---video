@@ -3,7 +3,9 @@ package com.wilmer.reproductor.ui
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +22,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -37,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -60,8 +65,9 @@ data class QueueItem(val uri: Uri, val title: String)
 data class PlaybackRequest(val items: List<QueueItem>, val startIndex: Int = 0, val shuffle: Boolean = false)
 
 fun Video.displayTitle(): String = when (val k = kind) {
-    is VideoKind.Episode -> "T${k.season} E${k.episode} · ${k.title}"
+    is VideoKind.Episode -> if (k.episode > 0) "T${k.season} E${k.episode} · ${k.title}" else k.title
     is VideoKind.Movie -> if (k.year != null) "${k.title} (${k.year})" else k.title
+    is VideoKind.Reel -> k.title
     is VideoKind.Other -> k.title
 }
 
@@ -136,7 +142,35 @@ fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier, durationMs: Long = 0
     }
 }
 
+/** Videos marcados para hacer algo con todos a la vez (crear una lista, reproducirlos). */
+class Selection {
+    /** Direcciones de los videos marcados, en el orden en que se marcaron. */
+    var uris by mutableStateOf(emptySet<String>())
+        private set
+
+    /** Videos que muestra la pantalla actual, para "Seleccionar todo". */
+    var visible: List<Video> = emptyList()
+
+    val active: Boolean get() = uris.isNotEmpty()
+
+    fun toggle(video: Video) {
+        val key = video.uri.toString()
+        uris = if (key in uris) uris - key else uris + key
+    }
+
+    fun selectAll() {
+        uris = uris + visible.map { it.uri.toString() }
+    }
+
+    fun clear() {
+        uris = emptySet()
+    }
+}
+
+val LocalSelection = staticCompositionLocalOf<Selection?> { null }
+
 /** Fila de un video con miniatura, título y menú de acciones. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VideoRow(
     uri: Uri,
@@ -144,17 +178,34 @@ fun VideoRow(
     subtitle: String,
     durationMs: Long,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    selectionMode: Boolean = false,
+    selected: Boolean = false,
     menu: @Composable (dismiss: () -> Unit) -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp),
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(start = 12.dp, top = 6.dp, bottom = 6.dp, end = if (selectionMode) 12.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        VideoThumbnail(uri, Modifier.width(128.dp).height(72.dp), durationMs)
+        Box {
+            VideoThumbnail(uri, Modifier.width(128.dp).height(72.dp), durationMs)
+            if (selectionMode) {
+                Icon(
+                    if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = if (selected) "Seleccionado" else "Sin seleccionar",
+                    tint = if (selected) MaterialTheme.colorScheme.primary else Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(4.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(12.dp)),
+                )
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -168,12 +219,14 @@ fun VideoRow(
                 )
             }
         }
-        Box {
-            IconButton(onClick = { menuOpen = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "Opciones")
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                menu { menuOpen = false }
+        if (!selectionMode) {
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Opciones")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    menu { menuOpen = false }
+                }
             }
         }
     }
@@ -186,15 +239,24 @@ fun LibraryVideoRow(
     onAddToPlaylist: () -> Unit,
     subtitle: String = "${video.folder} · ${formatSize(video.sizeBytes)}",
 ) {
+    // Mantener presionado marca el video; con algo marcado, tocar marca o desmarca
+    val selection = LocalSelection.current
+    val selectionMode = selection?.active == true
     VideoRow(
         uri = video.uri,
         title = video.displayTitle(),
         subtitle = subtitle,
         durationMs = video.durationMs,
-        onClick = onClick,
+        onClick = { if (selection != null && selection.active) selection.toggle(video) else onClick() },
+        onLongClick = selection?.let { s -> { s.toggle(video) } },
+        selectionMode = selectionMode,
+        selected = selection?.uris?.contains(video.uri.toString()) == true,
     ) { dismiss ->
         DropdownMenuItem(text = { Text("Reproducir") }, onClick = { dismiss(); onClick() })
         DropdownMenuItem(text = { Text("Agregar a lista") }, onClick = { dismiss(); onAddToPlaylist() })
+        if (selection != null) {
+            DropdownMenuItem(text = { Text("Seleccionar varios") }, onClick = { dismiss(); selection.toggle(video) })
+        }
     }
 }
 

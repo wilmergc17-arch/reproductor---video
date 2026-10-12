@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,8 @@ fun VideoList(
     askAdd: (List<Video>) -> Unit,
     header: (@Composable () -> Unit)? = null,
 ) {
+    val selection = LocalSelection.current
+    SideEffect { selection?.visible = videos }
     if (videos.isEmpty() && header == null) {
         EmptyMessage(empty)
         return
@@ -200,6 +203,8 @@ private fun ShowDetail(
     onCreatePlaylist: (Show) -> Unit,
 ) {
     val all = show.episodes
+    val selection = LocalSelection.current
+    SideEffect { selection?.visible = all.filter { it.matchesQuery(query) } }
     LazyColumn(Modifier.fillMaxSize()) {
         item {
             Row(

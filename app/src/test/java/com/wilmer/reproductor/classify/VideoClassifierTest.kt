@@ -3,6 +3,7 @@ package com.wilmer.reproductor.classify
 import com.wilmer.reproductor.classify.VideoKind.Episode
 import com.wilmer.reproductor.classify.VideoKind.Movie
 import com.wilmer.reproductor.classify.VideoKind.Other
+import com.wilmer.reproductor.classify.VideoKind.Reel
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -79,11 +80,25 @@ class VideoClassifierTest {
     fun videosPersonalesSonOtros() {
         assertEquals(Other::class, classify("VID_20240512_123456.mp4", "DCIM/Camera/")::class)
         assertEquals(Other::class, classify("VID-20240512-WA0003.mp4", "WhatsApp/Media/WhatsApp Video/")::class)
+        assertEquals(Other::class, classify("Screen_Recording_20240102-101010.mp4")::class)
+    }
+
+    @Test
+    fun laDuracionDecideElTipo() {
+        // Una hora o más: película, aunque el nombre no lo diga
+        assertEquals(Movie::class, classify("Screen_Recording_20240102-101010.mp4", "", 2 * 60 * 60_000L)::class)
+        assertEquals(Movie("Coco", 2017), classify("Coco (2017).mp4", "", 105 * 60_000L))
+        // Menos de 10 minutos: reel
+        assertEquals(Reel("Cumpleaños De Ana"), classify("cumpleaños de ana.mp4", "", 5 * 60_000L))
+        assertEquals(Reel::class, classify("Coco (2017).mp4", "", 3 * 60_000L)::class)
+        // De 10 a 59 minutos: serie; el nombre agrupa por serie y temporada
         assertEquals(
-            Other::class,
-            classify("Screen_Recording_20240102-101010.mp4", "", 2 * 60 * 60_000L)::class,
+            Episode("Breaking Bad", 1, 2, null),
+            classify("Breaking.Bad.S01E02.mkv", "", 47 * 60_000L),
         )
-        assertEquals(Other("Cumpleaños De Ana"), classify("cumpleaños de ana.mp4", "", 5 * 60_000L))
+        // Sin número de episodio en el nombre: la serie es la carpeta
+        assertEquals(Episode("Mis Clases", 1, 0, "Clase Uno"), classify("clase uno.mp4", "Mis Clases/", 30 * 60_000L))
+        assertEquals(Episode("Download", 1, 0, "Clip"), classify("clip.mp4", "Download/", 25 * 60_000L))
     }
 
     @Test
