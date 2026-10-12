@@ -245,6 +245,7 @@ fun LibraryVideoRow(
     // Mantener presionado marca el video; con algo marcado, tocar marca o desmarca
     val selection = LocalSelection.current
     val deleteRequest = LocalDeleteRequest.current
+    val context = LocalContext.current
     val selectionMode = selection?.active == true
     VideoRow(
         uri = video.uri,
@@ -258,6 +259,7 @@ fun LibraryVideoRow(
     ) { dismiss ->
         DropdownMenuItem(text = { Text("Reproducir") }, onClick = { dismiss(); onClick() })
         DropdownMenuItem(text = { Text("Agregar a lista") }, onClick = { dismiss(); onAddToPlaylist() })
+        DropdownMenuItem(text = { Text("Compartir") }, onClick = { dismiss(); shareVideos(context, listOf(video.uri)) })
         if (selection != null) {
             DropdownMenuItem(text = { Text("Seleccionar varios") }, onClick = { dismiss(); selection.toggle(video) })
         }

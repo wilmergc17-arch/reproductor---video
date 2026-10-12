@@ -58,5 +58,15 @@
                 <data android:mimeType="application/vnd.apple.mpegurl" />
             </intent-filter>
         </activity>
+        <!-- Para compartir con otras apps los videos encontrados por el escaneo de carpetas -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/rutas_compartir" />
+        </provider>
     </application>
 </manifest>

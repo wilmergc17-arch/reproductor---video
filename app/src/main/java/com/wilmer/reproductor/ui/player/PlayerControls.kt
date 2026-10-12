@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -96,6 +97,7 @@ fun PlayerControls(
     onAudio: () -> Unit,
     onSubtitles: () -> Unit,
     onPip: () -> Unit,
+    onShare: () -> Unit,
     onErrorNext: () -> Unit,
 ) {
     // Cada botón avisa de la interacción para que los controles no se oculten
@@ -167,6 +169,7 @@ fun PlayerControls(
                         Spacer(Modifier.width(4.dp))
                         Text(speedLabel(speed), color = Color.White)
                     }
+                    ControlIcon(Icons.Default.Share, "Compartir", act(onShare))
                     ControlIcon(Icons.Default.PictureInPictureAlt, "Ventana flotante", onPip)
                 }
 

@@ -57,6 +57,7 @@ import com.wilmer.reproductor.data.ResumeStore
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
 import com.wilmer.reproductor.ui.formatDuration
+import com.wilmer.reproductor.ui.shareVideos
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -70,10 +71,10 @@ enum class AspectMode(val label: String, val resizeMode: Int) {
 
 /** Orientación de la pantalla durante la reproducción. */
 enum class RotationMode(val label: String) {
+    VERTICAL("Vertical"),
+    HORIZONTAL("Horizontal"),
     SEGUIR_VIDEO("Según el video"),
     LIBRE("Girar libre"),
-    HORIZONTAL("Horizontal"),
-    VERTICAL("Vertical"),
 }
 
 private enum class DragMode { NONE, SEEK, VOLUME, BRIGHTNESS }
@@ -151,7 +152,8 @@ fun PlayerScreen(
     var interactionTick by remember { mutableIntStateOf(0) }
     var locked by remember { mutableStateOf(false) }
     var aspectMode by remember { mutableStateOf(AspectMode.AJUSTAR) }
-    var rotationMode by remember { mutableStateOf(RotationMode.SEGUIR_VIDEO) }
+    // Por defecto en vertical; el botón de rotación cambia a horizontal, según el video o libre
+    var rotationMode by remember { mutableStateOf(RotationMode.VERTICAL) }
     var dialog by remember { mutableStateOf<PlayerDialog?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
 
@@ -487,6 +489,9 @@ fun PlayerScreen(
                 onAudio = { dialog = PlayerDialog.AUDIO },
                 onSubtitles = { dialog = PlayerDialog.SUBTITLES },
                 onPip = onEnterPip,
+                onShare = {
+                    player.currentMediaItem?.localConfiguration?.uri?.let { shareVideos(context, listOf(it)) }
+                },
                 onErrorNext = { player.seekToNext(); player.prepare() },
             )
         }

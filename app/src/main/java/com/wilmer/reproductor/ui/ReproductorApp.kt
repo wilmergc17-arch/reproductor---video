@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import androidx.activity.result.IntentSenderRequest
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.runtime.rememberCoroutineScope
 import com.wilmer.reproductor.data.DeleteResult
 import kotlinx.coroutines.launch
@@ -347,6 +348,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     }
                     IconButton(onClick = { askAdd(selectedVideos()) }) {
                         Icon(Icons.Default.PlaylistAdd, contentDescription = "Agregar seleccionados a una lista")
+                    }
+                    IconButton(onClick = { shareVideos(context, selectedVideos().map { it.uri }) }) {
+                        Icon(Icons.Default.Share, contentDescription = "Compartir seleccionados")
                     }
                     IconButton(onClick = { requestDelete(selectedVideos()) }) {
                         Icon(Icons.Default.Delete, contentDescription = "Eliminar seleccionados del teléfono")

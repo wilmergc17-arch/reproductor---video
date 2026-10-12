@@ -2,7 +2,7 @@
 
 App Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.4.0)
+## Qué hace (versión 0.5.0)
 
 ### Biblioteca
 - Tres formas de encontrar videos, combinables desde el menú ⋮ > "Carpetas a escanear…":
@@ -27,6 +27,7 @@ La biblioteca se guarda en el teléfono: al abrir la app aparece al instante y s
 ### Listas de reproducción
 - Crear, renombrar y borrar listas; agregar videos, temporadas completas o carpetas.
 - Eliminar videos del teléfono desde el menú ⋮ de cada video o con la selección múltiple, siempre con confirmación (Android puede pedir la suya también).
+- Compartir videos con otras apps (WhatsApp, Telegram, Drive…) desde el menú ⋮, la selección múltiple o el reproductor.
 - Selección múltiple: mantén presionado un video (o menú ⋮ > Seleccionar varios), marca otros y agrégalos juntos a una lista o reprodúcelos.
 - Reordenar (subir/bajar) y quitar videos; reproducir en orden o aleatorio.
 - "Crear lista" desde una serie arma la lista con todos sus episodios en orden.
@@ -34,7 +35,7 @@ La biblioteca se guarda en el teléfono: al abrir la app aparece al instante y s
 ### Reproductor (estilo VLC)
 - Gestos: deslizar horizontal para adelantar/atrasar, vertical a la izquierda para brillo y a la derecha para volumen, doble toque a los lados para ±10 s y al centro para pausa.
 - Velocidad de 0.25x a 4x, pista de audio, subtítulos internos o desde archivo (srt, vtt, ass, ttml).
-- Ajuste de imagen (ajustar, llenar, estirar), rotación (según el video, libre, horizontal, vertical), bloqueo de pantalla.
+- Ajuste de imagen (ajustar, llenar, estirar), rotación (abre en vertical por defecto; el botón cambia a horizontal, según el video o libre), bloqueo de pantalla.
 - Cola con anterior/siguiente, repetir (todo / uno), aleatorio.
 - Continúa donde lo dejaste en cada video.
 - Ventana flotante (picture-in-picture) con el botón o al pulsar Inicio.
