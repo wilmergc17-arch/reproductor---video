@@ -15,6 +15,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import com.wilmer.reproductor.ui.theme.BrandGradientHorizontal
@@ -288,13 +291,34 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     var urlDialog by remember { mutableStateOf(false) }
     var addToPlaylist by remember { mutableStateOf<List<PlaylistEntry>?>(null) }
 
-    BackHandler(enabled = detail != null || searching) {
-        if (detail != null) detail = null else { searching = false; query = "" }
+    // Filtro de videos parecidos (peso o duración); se quita al cambiar de pestaña o de carpeta
+    var filter by remember { mutableStateOf<SimilarFilter?>(null) }
+    LaunchedEffect(tab, detail) { filter = null }
+
+    BackHandler(enabled = detail != null || searching || filter != null) {
+        when {
+            filter != null -> filter = null
+            detail != null -> detail = null
+            else -> { searching = false; query = "" }
+        }
     }
     // Registrado después: con videos marcados, Atrás primero quita la selección
     val selection = remember { Selection() }
     BackHandler(enabled = selection.active) { selection.clear() }
     val selectedVideos: () -> List<Video> = { selection.uris.mapNotNull { state.byUri[it] } }
+
+    // Videos sobre los que se puede filtrar en la pantalla actual (null = sin filtros aquí)
+    val filterScope: List<Video>? = when (tab) {
+        Tab.VIDEOS -> state.videos
+        Tab.PELICULAS -> state.movies
+        Tab.REELS -> state.reels
+        Tab.CARPETAS -> (detail as? Detail.FolderDetail)?.let { d -> state.folders.firstOrNull { it.path == d.path }?.videos }
+        Tab.SERIES -> (detail as? Detail.ShowDetail)?.let { d -> state.shows.firstOrNull { it.key == d.key }?.episodes }
+        Tab.LISTAS -> null
+    }?.takeIf { canShowLibrary && state.loaded && state.videos.isNotEmpty() }
+    val requestSimilar: (Video, Metric) -> Unit = { video, metric ->
+        filter = SimilarFilter(metric, video, filter?.tolerance ?: 0.10)
+    }
 
     // Eliminar: primero nuestra confirmación; si Android pide la suya, se muestra después
     val scope = rememberCoroutineScope()
@@ -334,7 +358,11 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val play: (List<Video>, Int) -> Unit = { list, index -> onPlay(PlaybackRequest(list.toQueue(), index)) }
     val askAdd: (List<Video>) -> Unit = { list -> addToPlaylist = list.map { it.toEntry() } }
 
-    CompositionLocalProvider(LocalSelection provides selection, LocalDeleteRequest provides requestDelete) {
+    CompositionLocalProvider(
+        LocalSelection provides selection,
+        LocalDeleteRequest provides requestDelete,
+        LocalSimilarRequest provides requestSimilar,
+    ) {
     Scaffold(
         topBar = {
             if (selection.active) TopAppBar(
@@ -468,20 +496,26 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     }
                 },
             )
-            if (detail == null) {
-                TabPills(
-                    selected = tab,
-                    counts = mapOf(
-                        Tab.VIDEOS to state.videos.size,
-                        Tab.CARPETAS to state.folders.size,
-                        Tab.PELICULAS to state.movies.size,
-                        Tab.SERIES to state.shows.size,
-                        Tab.REELS to state.reels.size,
-                        Tab.LISTAS to playlists.size,
-                    ),
-                    onSelect = { tab = it; detail = null },
-                )
+            if (filterScope != null) FilterRow(filter) { filter = it }
             }
+        },
+        bottomBar = {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                Tab.entries.forEach { t ->
+                    NavigationBarItem(
+                        selected = t == tab,
+                        onClick = { tab = t; detail = null },
+                        icon = { Icon(t.icon, contentDescription = null) },
+                        label = { Text(t.label, maxLines = 1, style = MaterialTheme.typography.labelSmall) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color.White,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                    )
+                }
             }
         },
     ) { padding ->
@@ -526,6 +560,13 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     onFullScan = requestFullScan,
                     onPickFolder = { pickFolder.launch(null) },
                     onOpenFile = { openFile.launch(arrayOf("video/*")) },
+                )
+                filter != null && filterScope != null -> SimilarResults(
+                    filter = filter!!,
+                    videos = filterScope.filter { it.matchesQuery(query) },
+                    play = play,
+                    askAdd = askAdd,
+                    onClearReference = { filter = filter?.copy(reference = null) },
                 )
                 else -> when (tab) {
                     Tab.VIDEOS -> VideosTab(
@@ -646,51 +687,6 @@ private fun detailTitle(detail: Detail?, state: LibraryState, playlistNames: Map
         is Detail.PlaylistDetail -> playlistNames[detail.id]
         null -> null
     }
-
-/** Pestañas como píldoras deslizables; la elegida lleva el degradado de la marca. */
-@Composable
-private fun TabPills(selected: Tab, counts: Map<Tab, Int>, onSelect: (Tab) -> Unit) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(Tab.entries) { t ->
-            val on = t == selected
-            Row(
-                Modifier
-                    .clip(CircleShape)
-                    .background(
-                        if (on) BrandGradientHorizontal else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    )
-                    .clickable { onSelect(t) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    t.icon,
-                    contentDescription = null,
-                    tint = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    t.label,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (on) Color.White else MaterialTheme.colorScheme.onSurface,
-                )
-                val count = counts[t] ?: 0
-                if (count > 0) {
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "$count",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (on) Color.White.copy(alpha = 0.85f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun VideoSources(

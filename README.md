@@ -2,14 +2,19 @@
 
 Reproductor de video para Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.6.0)
+## Qué hace (versión 0.7.0)
 
 ### Diseño
 - Tema oscuro con el degradado de la marca (naranja, rosa, violeta) y un ícono nuevo: botón de reproducir con un rayo.
-- Pestañas como píldoras deslizables arriba, con el número de videos de cada una.
+- Barra de navegación abajo con las secciones: Videos, Carpetas, Películas, Series, Reels y Listas.
 - Filas con miniaturas redondeadas y etiqueta de color por tipo (Película, Serie, Reel); Películas en cuadrícula de 2 columnas y Reels en cuadrícula vertical de 3.
 - Controles del reproductor con sombras degradadas, botón de reproducir con el degradado y botones de cristal.
 - El paquete sigue siendo `com.wilmer.reproductor`, así que se instala encima de la versión anterior sin perder la biblioteca ni las listas.
+
+### Filtros de videos parecidos
+- Fila de filtros arriba en Videos, Películas, Reels y dentro de una carpeta o serie: **Peso similar** y **Duración similar**, con tolerancia de ±5 %, ±10 % o ±20 %.
+- Sin elegir un video, agrupa los que se parecen entre sí: sirve para encontrar copias repetidas y borrarlas con la selección múltiple.
+- Desde el menú ⋮ de un video, "Ver de peso similar" o "Ver de duración similar" muestra los parecidos a ese video, del más cercano al más lejano, con la diferencia en %.
 
 ### Biblioteca
 - Tres formas de encontrar videos, combinables desde el menú ⋮ > "Carpetas a escanear…":

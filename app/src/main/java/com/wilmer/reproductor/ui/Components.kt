@@ -244,6 +244,36 @@ fun GradientButton(
     }
 }
 
+/** Píldora seleccionable (filtros); la elegida lleva el degradado de la marca. */
+@Composable
+fun Pill(text: String, icon: ImageVector?, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .clip(CircleShape)
+            .background(
+                if (selected) BrandGradientHorizontal else SolidColor(MaterialTheme.colorScheme.surfaceContainerHigh)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon?.let {
+            Icon(
+                it,
+                contentDescription = null,
+                tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            text,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (selected) Color.White else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
 /** Etiqueta de color con el tipo del video (Película, Serie, Reel). */
 data class KindLabel(val text: String, val color: Color)
 
@@ -396,6 +426,12 @@ fun LibraryVideoMenu(video: Video, dismiss: () -> Unit, onPlay: () -> Unit, onAd
     MenuItem("Reproducir", Icons.Default.PlayArrow) { dismiss(); onPlay() }
     MenuItem("Agregar a lista", Icons.Default.PlaylistAdd) { dismiss(); onAddToPlaylist() }
     MenuItem("Compartir", Icons.Default.Share) { dismiss(); shareVideos(context, listOf(video.uri)) }
+    LocalSimilarRequest.current?.let { similar ->
+        MenuItem("Ver de peso similar", Metric.PESO.icon) { dismiss(); similar(video, Metric.PESO) }
+        if (video.durationMs > 0) {
+            MenuItem("Ver de duración similar", Metric.DURACION.icon) { dismiss(); similar(video, Metric.DURACION) }
+        }
+    }
     if (selection != null) {
         MenuItem("Seleccionar varios", Icons.Default.Check) { dismiss(); selection.toggle(video) }
     }
