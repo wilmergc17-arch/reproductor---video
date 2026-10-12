@@ -2,7 +2,7 @@
 
 App Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.3.0)
+## Qué hace (versión 0.4.0)
 
 ### Biblioteca
 - Tres formas de encontrar videos, combinables desde el menú ⋮ > "Carpetas a escanear…":
@@ -10,7 +10,7 @@ App Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
   - **Escanear todo el teléfono**: recorre memoria interna y tarjeta SD archivo por archivo, incluidas carpetas que la galería no indexa (pide "acceso a todos los archivos").
   - **Elegir carpetas**: el selector del sistema; las carpetas quedan guardadas y se vuelven a revisar al abrir la app.
 - Miniaturas y duración; si no aparece nada, la pantalla dice cuántos videos dio cada fuente y el error, si hubo.
-- Pestañas: **Videos** (ordenar por fecha, nombre, duración o tamaño), **Carpetas**, **Películas**, **Series**, **Reels** y **Listas**.
+- Pestañas: **Videos** (ordenar por fecha, nombre A-Z/Z-A, duración o tamaño, también en Películas, Reels y dentro de cada carpeta), **Carpetas**, **Películas**, **Series**, **Reels** y **Listas**.
 - Búsqueda sin distinguir mayúsculas ni tildes.
 - Se actualiza sola cuando agregas o borras videos.
 - Abrir cualquier archivo, una dirección de red (http, https, rtsp, HLS .m3u8, DASH) o el video de ejemplo desde el menú ⋮.
@@ -26,6 +26,7 @@ La biblioteca se guarda en el teléfono: al abrir la app aparece al instante y s
 
 ### Listas de reproducción
 - Crear, renombrar y borrar listas; agregar videos, temporadas completas o carpetas.
+- Eliminar videos del teléfono desde el menú ⋮ de cada video o con la selección múltiple, siempre con confirmación (Android puede pedir la suya también).
 - Selección múltiple: mantén presionado un video (o menú ⋮ > Seleccionar varios), marca otros y agrégalos juntos a una lista o reprodúcelos.
 - Reordenar (subir/bajar) y quitar videos; reproducir en orden o aleatorio.
 - "Crear lista" desde una serie arma la lista con todos sus episodios en orden.

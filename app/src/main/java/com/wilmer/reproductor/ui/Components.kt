@@ -169,6 +169,9 @@ class Selection {
 
 val LocalSelection = staticCompositionLocalOf<Selection?> { null }
 
+/** Pide confirmación para borrar videos del teléfono (la pantalla principal muestra el diálogo). */
+val LocalDeleteRequest = staticCompositionLocalOf<((List<Video>) -> Unit)?> { null }
+
 /** Fila de un video con miniatura, título y menú de acciones. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -241,6 +244,7 @@ fun LibraryVideoRow(
 ) {
     // Mantener presionado marca el video; con algo marcado, tocar marca o desmarca
     val selection = LocalSelection.current
+    val deleteRequest = LocalDeleteRequest.current
     val selectionMode = selection?.active == true
     VideoRow(
         uri = video.uri,
@@ -256,6 +260,9 @@ fun LibraryVideoRow(
         DropdownMenuItem(text = { Text("Agregar a lista") }, onClick = { dismiss(); onAddToPlaylist() })
         if (selection != null) {
             DropdownMenuItem(text = { Text("Seleccionar varios") }, onClick = { dismiss(); selection.toggle(video) })
+        }
+        deleteRequest?.let { request ->
+            DropdownMenuItem(text = { Text("Eliminar del teléfono") }, onClick = { dismiss(); request(listOf(video)) })
         }
     }
 }

@@ -10,7 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.wilmer.reproductor.classify.VideoClassifier
 import com.wilmer.reproductor.classify.VideoKind
 import com.wilmer.reproductor.data.CachedLibrary
+import com.wilmer.reproductor.data.DeleteResult
 import com.wilmer.reproductor.data.FileScanner
+import com.wilmer.reproductor.data.VideoDeleter
 import com.wilmer.reproductor.data.LibraryCache
 import com.wilmer.reproductor.data.readDurations
 import com.wilmer.reproductor.data.withDuration
@@ -67,6 +69,7 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     private val cache = LibraryCache(app)
+    private val deleter = VideoDeleter(app)
     private var cached: CachedLibrary? = null
     private var observer: ContentObserver? = null
     private var reloadJob: Job? = null
@@ -104,6 +107,42 @@ class LibraryViewModel(app: Application) : AndroidViewModel(app) {
     fun folderName(tree: String): String =
         scanner.folderName(Uri.parse(tree))
             ?: Uri.decode(tree).substringAfterLast(':').ifEmpty { tree }
+
+    /** Borra los videos del teléfono y los quita de la biblioteca y de las listas. */
+    suspend fun delete(uris: List<Uri>): DeleteResult {
+        val result = deleter.delete(uris)
+        forget(result.deleted)
+        return result
+    }
+
+    /** Tras confirmar en el diálogo de Android: reintenta y quita lo que ya no existe. */
+    suspend fun deleteConfirmed(uris: List<Uri>): DeleteResult {
+        val result = deleter.delete(uris)
+        // En Android 11+ el propio diálogo ya los borró: el reintento no encuentra nada que borrar
+        forget(uris.map { it.toString() }.toSet())
+        return result
+    }
+
+    private suspend fun forget(uris: Set<String>) {
+        if (uris.isEmpty()) return
+        playlists.removeEverywhere(uris)
+        val current = _state.value
+        val remaining = current.videos.filter { it.uri.toString() !in uris }
+        _state.value = buildState(remaining).copy(
+            loading = current.loading,
+            fromAndroid = current.fromAndroid,
+            fromScan = current.fromScan,
+            error = current.error,
+        )
+        cached?.let { c ->
+            val updated = c.copy(
+                videos = c.videos.filter { it.uri.toString() !in uris },
+                scannedUris = c.scannedUris - uris,
+            )
+            cached = updated
+            cache.save(updated)
+        }
+    }
 
     /** Se llama cuando ya hay permiso para leer los videos del teléfono. */
     fun onPermissionGranted() {

@@ -1,6 +1,12 @@
 package com.wilmer.reproductor.ui
 
 import android.Manifest
+import android.app.Activity
+import androidx.activity.result.IntentSenderRequest
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.runtime.rememberCoroutineScope
+import com.wilmer.reproductor.data.DeleteResult
+import kotlinx.coroutines.launch
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -101,9 +107,12 @@ enum class Tab(val label: String, val icon: ImageVector) {
 
 enum class SortOrder(val label: String) {
     RECIENTES("Más recientes"),
-    NOMBRE("Nombre"),
-    DURACION("Duración"),
-    TAMANO("Tamaño"),
+    NOMBRE_AZ("Nombre (A-Z)"),
+    NOMBRE_ZA("Nombre (Z-A)"),
+    DURACION_MAYOR("Duración (más largos)"),
+    DURACION_MENOR("Duración (más cortos)"),
+    TAMANO_MAYOR("Tamaño (más grandes)"),
+    TAMANO_MENOR("Tamaño (más pequeños)"),
 }
 
 /** Pantalla de detalle abierta dentro de una pestaña. */
@@ -120,6 +129,11 @@ private val mediaPermissions: Array<String> = when {
         Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
     )
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(Manifest.permission.READ_MEDIA_VIDEO)
+    // Android 9 o menos: escribir hace falta para poder eliminar videos
+    Build.VERSION.SDK_INT <= Build.VERSION_CODES.P -> arrayOf(
+        Manifest.permission.READ_EXTERNAL_STORAGE,
+        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+    )
     else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
 }
 
@@ -236,8 +250,15 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             // Guarda el permiso para poder volver a leer la carpeta al abrir la app otra vez
+            // Lectura y escritura (para poder eliminar); si no se concede escritura, solo lectura
             runCatching {
-                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                )
+            }.onFailure {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
             }
             viewModel.addFolder(uri)
         }
@@ -262,6 +283,36 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     BackHandler(enabled = selection.active) { selection.clear() }
     val selectedVideos: () -> List<Video> = { selection.uris.mapNotNull { state.byUri[it] } }
 
+    // Eliminar: primero nuestra confirmación; si Android pide la suya, se muestra después
+    val scope = rememberCoroutineScope()
+    var toDelete by remember { mutableStateOf<List<Video>?>(null) }
+    var deleteResult by remember { mutableStateOf<DeleteResult?>(null) }
+    var pendingDelete by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    val systemDelete = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        val pending = pendingDelete
+        pendingDelete = emptyList()
+        if (result.resultCode == Activity.RESULT_OK && pending.isNotEmpty()) {
+            scope.launch { deleteResult = viewModel.deleteConfirmed(pending) }
+        }
+    }
+    LaunchedEffect(deleteResult) {
+        val r = deleteResult ?: return@LaunchedEffect
+        deleteResult = null
+        val confirm = r.confirm
+        if (confirm != null) {
+            pendingDelete = r.pending
+            systemDelete.launch(IntentSenderRequest.Builder(confirm).build())
+        }
+        if (r.failed > 0) {
+            notice = (if (r.failed == 1) "No se pudo eliminar 1 video." else "No se pudieron eliminar ${r.failed} videos.") +
+                " Si están en una carpeta elegida, quítala y vuelve a agregarla en ⋮ > Carpetas a escanear para dar permiso de escritura," +
+                " o activa \"Escanear todo el teléfono\"."
+        }
+    }
+    val requestDelete: (List<Video>) -> Unit = { list -> if (list.isNotEmpty()) toDelete = list }
+
     // Abre cualquier archivo de video, aunque no esté en la biblioteca (mkv, carpetas ocultas…)
     val openFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { onPlay(PlaybackRequest(listOf(QueueItem(it, it.lastPathSegment ?: "Video")))) }
@@ -270,7 +321,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val play: (List<Video>, Int) -> Unit = { list, index -> onPlay(PlaybackRequest(list.toQueue(), index)) }
     val askAdd: (List<Video>) -> Unit = { list -> addToPlaylist = list.map { it.toEntry() } }
 
-    CompositionLocalProvider(LocalSelection provides selection) {
+    CompositionLocalProvider(LocalSelection provides selection, LocalDeleteRequest provides requestDelete) {
     Scaffold(
         topBar = {
             if (selection.active) TopAppBar(
@@ -296,6 +347,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     }
                     IconButton(onClick = { askAdd(selectedVideos()) }) {
                         Icon(Icons.Default.PlaylistAdd, contentDescription = "Agregar seleccionados a una lista")
+                    }
+                    IconButton(onClick = { requestDelete(selectedVideos()) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar seleccionados del teléfono")
                     }
                 },
             ) else TopAppBar(
@@ -333,7 +387,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                             Icon(Icons.Default.Search, contentDescription = "Buscar")
                         }
                     }
-                    if (tab == Tab.VIDEOS && detail == null) {
+                    val sortable = tab == Tab.VIDEOS || tab == Tab.PELICULAS || tab == Tab.REELS ||
+                        (tab == Tab.CARPETAS && detail != null)
+                    if (sortable) {
                         Box {
                             IconButton(onClick = { sortMenuOpen = true }) {
                                 Icon(Icons.Default.Sort, contentDescription = "Ordenar")
@@ -439,6 +495,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                     )
                     Tab.CARPETAS -> FoldersTab(
                         state = state,
+                        sort = sort,
                         query = query,
                         openPath = (detail as? Detail.FolderDetail)?.path,
                         onOpen = { detail = Detail.FolderDetail(it) },
@@ -446,7 +503,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         askAdd = askAdd,
                     )
                     Tab.PELICULAS -> VideoList(
-                        videos = state.movies.filter { it.matchesQuery(query) },
+                        videos = state.movies.filter { it.matchesQuery(query) }.sortedFor(sort),
                         empty = "No hay películas: aquí aparecen los videos de una hora o más.",
                         play = play,
                         askAdd = askAdd,
@@ -465,7 +522,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         },
                     )
                     Tab.REELS -> VideoList(
-                        videos = state.reels.filter { it.matchesQuery(query) },
+                        videos = state.reels.filter { it.matchesQuery(query) }.sortedFor(sort),
                         empty = "No hay reels: aquí aparecen los videos de menos de 10 minutos.",
                         play = play,
                         askAdd = askAdd,
@@ -475,6 +532,28 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
             }
         }
     }
+    }
+
+    toDelete?.let { list ->
+        AlertDialog(
+            onDismissRequest = { toDelete = null },
+            title = {
+                Text(if (list.size == 1) "¿Eliminar este video del teléfono?" else "¿Eliminar ${list.size} videos del teléfono?")
+            },
+            text = {
+                val names = list.take(3).joinToString("\n") { "• ${it.fileName}" } +
+                    if (list.size > 3) "\n• y ${list.size - 3} más" else ""
+                Text("$names\n\nSe borran los archivos del almacenamiento y no se pueden recuperar.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    toDelete = null
+                    selection.clear()
+                    scope.launch { deleteResult = viewModel.delete(list.map { it.uri }) }
+                }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
+        )
     }
 
     if (sourcesDialog) {

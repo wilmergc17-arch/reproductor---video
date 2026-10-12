@@ -39,6 +39,10 @@ class PlaylistStore(context: Context) {
         p.copy(entries = p.entries.filterNot { it.uri == uri })
     }
 
+    /** Quita videos borrados del teléfono de todas las listas. */
+    fun removeEverywhere(uris: Set<String>) =
+        save(_playlists.value.map { p -> p.copy(entries = p.entries.filterNot { it.uri in uris }) })
+
     fun move(id: String, from: Int, to: Int) = edit(id) { p ->
         if (from !in p.entries.indices || to !in p.entries.indices) return@edit p
         val list = p.entries.toMutableList()

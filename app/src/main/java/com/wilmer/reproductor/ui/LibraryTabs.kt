@@ -89,21 +89,24 @@ fun VideosTab(
     play: (List<Video>, Int) -> Unit,
     askAdd: (List<Video>) -> Unit,
 ) {
-    val sorted = remember(videos, sort, query) {
-        val filtered = videos.filter { it.matchesQuery(query) }
-        when (sort) {
-            SortOrder.RECIENTES -> filtered.sortedByDescending { it.dateAddedSec }
-            SortOrder.NOMBRE -> filtered.sortedBy { it.fileName.lowercase() }
-            SortOrder.DURACION -> filtered.sortedByDescending { it.durationMs }
-            SortOrder.TAMANO -> filtered.sortedByDescending { it.sizeBytes }
-        }
-    }
+    val sorted = remember(videos, sort, query) { videos.filter { it.matchesQuery(query) }.sortedFor(sort) }
     VideoList(sorted, "No hay videos en el teléfono.", play, askAdd)
+}
+
+fun List<Video>.sortedFor(order: SortOrder): List<Video> = when (order) {
+    SortOrder.RECIENTES -> sortedByDescending { it.dateAddedSec }
+    SortOrder.NOMBRE_AZ -> sortedBy { it.displayTitle().lowercase() }
+    SortOrder.NOMBRE_ZA -> sortedByDescending { it.displayTitle().lowercase() }
+    SortOrder.DURACION_MAYOR -> sortedByDescending { it.durationMs }
+    SortOrder.DURACION_MENOR -> sortedBy { if (it.durationMs > 0) it.durationMs else Long.MAX_VALUE }
+    SortOrder.TAMANO_MAYOR -> sortedByDescending { it.sizeBytes }
+    SortOrder.TAMANO_MENOR -> sortedBy { it.sizeBytes }
 }
 
 @Composable
 fun FoldersTab(
     state: LibraryState,
+    sort: SortOrder,
     query: String,
     openPath: String?,
     onOpen: (String) -> Unit,
@@ -112,7 +115,7 @@ fun FoldersTab(
 ) {
     val folder = openPath?.let { p -> state.folders.firstOrNull { it.path == p } }
     if (folder != null) {
-        val videos = folder.videos.filter { it.matchesQuery(query) }
+        val videos = folder.videos.filter { it.matchesQuery(query) }.sortedFor(sort)
         VideoList(videos, "Carpeta vacía.", play, askAdd, header = {
             PlayAllBar(onPlay = { play(videos, 0) }, onAdd = { askAdd(videos) }, count = videos.size)
         })
