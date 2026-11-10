@@ -14,9 +14,13 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      - name: Revisar que Android (ICU) acepte las expresiones regulares
+        run: python3 scripts/check_regex_icu.py app/src/main/java
+      - name: Probar el clasificador de películas y series
+        run: ./gradlew testDebugUnitTest
       - name: Compilar APK de depuración
         run: ./gradlew assembleDebug
       - uses: actions/upload-artifact@v4
         with:
-          name: reproductor-debug-apk
+          name: repropower-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
