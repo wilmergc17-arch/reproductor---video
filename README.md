@@ -2,7 +2,7 @@
 
 Reproductor de video para Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.7.0)
+## Qué hace (versión 0.8.0)
 
 ### Diseño
 - Tema oscuro con el degradado de la marca (naranja, rosa, violeta) y un ícono nuevo: botón de reproducir con un rayo.
@@ -45,7 +45,9 @@ La biblioteca se guarda en el teléfono: al abrir la app aparece al instante y s
 - "Crear lista" desde una serie arma la lista con todos sus episodios en orden.
 
 ### Reproductor (estilo VLC)
-- Gestos: deslizar horizontal para adelantar/atrasar, vertical a la izquierda para brillo y a la derecha para volumen, doble toque a los lados para ±10 s y al centro para pausa.
+- Gestos: deslizar horizontal para adelantar/atrasar, vertical a la izquierda para brillo y a la derecha para volumen, doble toque a los lados para ±10 s o, si lo cambias en ⋮ > "Doble toque a los lados", para pasar al video siguiente o anterior y al centro para pausa.
+- La app y el reproductor abren siempre en vertical; el botón de rotación cambia a horizontal, según el video o libre.
+- Botón **No molestar** (abajo en el reproductor): activa el No molestar de Android mientras ves el video y al cerrarlo o salir de la app deja el modo que tenías. La primera vez pide el permiso "Acceso a No molestar".
 - Velocidad de 0.25x a 4x, pista de audio, subtítulos internos o desde archivo (srt, vtt, ass, ttml).
 - Ajuste de imagen (ajustar, llenar, estirar), rotación (abre en vertical por defecto; el botón cambia a horizontal, según el video o libre), bloqueo de pantalla.
 - Cola con anterior/siguiente, repetir (todo / uno), aleatorio.

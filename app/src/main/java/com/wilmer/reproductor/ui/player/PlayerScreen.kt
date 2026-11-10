@@ -53,6 +53,10 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import com.wilmer.reproductor.data.QuietMode
 import com.wilmer.reproductor.data.ResumeStore
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
@@ -77,6 +81,15 @@ enum class RotationMode(val label: String) {
     LIBRE("Girar libre"),
 }
 
+/** Qué hace el doble toque en los lados izquierdo y derecho de la pantalla. */
+enum class TapMode(val label: String) {
+    SALTAR("Adelantar o atrasar 10 s"),
+    CAMBIAR_VIDEO("Video siguiente o anterior"),
+}
+
+/** La app y el reproductor abren en vertical; al cerrar el video se vuelve a esto. */
+private const val APP_ORIENTATION = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
 private enum class DragMode { NONE, SEEK, VOLUME, BRIGHTNESS }
 
 /** Ancho completo de la pantalla al deslizar = 100 segundos de avance o retroceso. */
@@ -98,6 +111,8 @@ fun PlayerScreen(
     val activity = remember(context) { context.findActivity() }
     val lifecycleOwner = LocalLifecycleOwner.current
     val resume = remember { ResumeStore(context) }
+    val quiet = remember { QuietMode(context) }
+    val playerPrefs = remember { context.getSharedPreferences("reproductor", Context.MODE_PRIVATE) }
     val audio = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val currentOnPlayingChanged by rememberUpdatedState(onPlayingChanged)
     val currentOnVideoSize by rememberUpdatedState(onVideoSize)
@@ -156,6 +171,15 @@ fun PlayerScreen(
     var rotationMode by remember { mutableStateOf(RotationMode.VERTICAL) }
     var dialog by remember { mutableStateOf<PlayerDialog?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
+    var tapMode by remember {
+        mutableStateOf(
+            TapMode.entries.firstOrNull { it.name == playerPrefs.getString("doble_toque", null) } ?: TapMode.SALTAR
+        )
+    }
+    // No molestar: se recuerda entre videos; se activa solo mientras el reproductor está a la vista
+    var quietOn by remember { mutableStateOf(quiet.wanted && quiet.hasAccess) }
+    var awaitingQuietAccess by remember { mutableStateOf(false) }
+    var appVisible by remember { mutableStateOf(true) }
 
     fun poke() {
         controlsVisible = true
@@ -239,9 +263,27 @@ fun PlayerScreen(
     // Pausa al salir de la app (en ventana flotante sigue reproduciendo)
     DisposableEffect(player, lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP) {
-                player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
-                player.pause()
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
+                    player.pause()
+                    appVisible = false
+                }
+                Lifecycle.Event.ON_START -> appVisible = true
+                Lifecycle.Event.ON_RESUME -> {
+                    // De vuelta de Ajustes: si ya dio el permiso, se activa No molestar
+                    if (awaitingQuietAccess) {
+                        awaitingQuietAccess = false
+                        if (quiet.hasAccess) {
+                            quietOn = true
+                            quiet.wanted = true
+                            showOsd("No molestar activado")
+                        } else {
+                            showOsd("Sin permiso no se puede activar No molestar")
+                        }
+                    }
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -270,6 +312,12 @@ fun PlayerScreen(
         }
     }
 
+    // No molestar solo mientras se ve el video; al salir de la app o cerrar el video se restaura
+    DisposableEffect(quietOn, appVisible) {
+        if (quietOn && appVisible) quiet.start()
+        onDispose { quiet.stop() }
+    }
+
     LaunchedEffect(osdTick) {
         if (osd != null) {
             delay(1_200)
@@ -286,7 +334,7 @@ fun PlayerScreen(
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.requestedOrientation = APP_ORIENTATION
             window?.let { w ->
                 w.attributes = w.attributes.apply {
                     screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -295,7 +343,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(rotationMode, videoAspect) {
+    // Se aplica apenas se compone (no después del primer cuadro) para que nunca abra girado
+    DisposableEffect(rotationMode, videoAspect) {
         activity?.requestedOrientation = when (rotationMode) {
             RotationMode.SEGUIR_VIDEO -> when {
                 videoAspect == 0f -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -304,8 +353,9 @@ fun PlayerScreen(
             }
             RotationMode.LIBRE -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
             RotationMode.HORIZONTAL -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            RotationMode.VERTICAL -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            RotationMode.VERTICAL -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         }
+        onDispose { }
     }
 
     BackHandler {
@@ -345,7 +395,7 @@ fun PlayerScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(locked) {
+                    .pointerInput(locked, tapMode) {
                         detectTapGestures(
                             onTap = {
                                 if (controlsVisible) controlsVisible = false else poke()
@@ -354,8 +404,22 @@ fun PlayerScreen(
                                 if (locked) return@detectTapGestures
                                 val third = size.width / 3f
                                 when {
-                                    offset.x < third -> { player.seekBack(); showOsd("−10 s") }
-                                    offset.x > third * 2 -> { player.seekForward(); showOsd("+10 s") }
+                                    offset.x < third -> when {
+                                        tapMode == TapMode.SALTAR -> { player.seekBack(); showOsd("−10 s") }
+                                        player.hasPreviousMediaItem() -> {
+                                            player.seekToPreviousMediaItem()
+                                            showOsd("⏮ Video anterior")
+                                        }
+                                        else -> { player.seekTo(0); showOsd("Desde el inicio") }
+                                    }
+                                    offset.x > third * 2 -> when {
+                                        tapMode == TapMode.SALTAR -> { player.seekForward(); showOsd("+10 s") }
+                                        player.hasNextMediaItem() -> {
+                                            player.seekToNextMediaItem()
+                                            showOsd("Video siguiente ⏭")
+                                        }
+                                        else -> showOsd("No hay más videos en la lista")
+                                    }
                                     else -> player.togglePlayPause()
                                 }
                             },
@@ -489,6 +553,28 @@ fun PlayerScreen(
                 onAudio = { dialog = PlayerDialog.AUDIO },
                 onSubtitles = { dialog = PlayerDialog.SUBTITLES },
                 onPip = onEnterPip,
+                quietOn = quietOn,
+                onQuiet = {
+                    when {
+                        quietOn -> {
+                            quietOn = false
+                            quiet.wanted = false
+                            showOsd("No molestar desactivado")
+                        }
+                        quiet.hasAccess -> {
+                            quietOn = true
+                            quiet.wanted = true
+                            showOsd("No molestar activado")
+                        }
+                        else -> dialog = PlayerDialog.QUIET_ACCESS
+                    }
+                },
+                tapMode = tapMode,
+                onTapMode = {
+                    tapMode = TapMode.entries[(tapMode.ordinal + 1) % TapMode.entries.size]
+                    playerPrefs.edit().putString("doble_toque", tapMode.name).apply()
+                    showOsd("Doble toque a los lados: ${tapMode.label.lowercase()}")
+                },
                 onShare = {
                     player.currentMediaItem?.localConfiguration?.uri?.let { shareVideos(context, listOf(it)) }
                 },
@@ -536,11 +622,34 @@ fun PlayerScreen(
                 dialog = null
             },
         )
+        PlayerDialog.QUIET_ACCESS -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Permitir No molestar") },
+            text = {
+                Text(
+                    "Para silenciar las notificaciones mientras ves un video, Android pide que des a " +
+                        "Repropower el \"Acceso a No molestar\". En la pantalla que se abre, busca Repropower " +
+                        "y actívalo; luego vuelve con Atrás. Al cerrar el video se restaura el modo que tenías."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    dialog = null
+                    awaitingQuietAccess = true
+                    runCatching { context.startActivity(QuietMode.accessSettingsIntent()) }
+                        .onFailure {
+                            awaitingQuietAccess = false
+                            showOsd("No se pudo abrir los ajustes")
+                        }
+                }) { Text("Abrir ajustes") }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancelar") } },
+        )
         null -> Unit
     }
 }
 
-enum class PlayerDialog { SPEED, AUDIO, SUBTITLES }
+enum class PlayerDialog { SPEED, AUDIO, SUBTITLES, QUIET_ACCESS }
 
 fun speedLabel(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"

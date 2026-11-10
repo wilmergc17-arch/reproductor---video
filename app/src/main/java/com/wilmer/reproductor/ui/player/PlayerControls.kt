@@ -32,6 +32,16 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.DoNotDisturbOff
+import androidx.compose.material.icons.filled.DoNotDisturbOn
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
@@ -104,8 +114,13 @@ fun PlayerControls(
     onSubtitles: () -> Unit,
     onPip: () -> Unit,
     onShare: () -> Unit,
+    quietOn: Boolean,
+    onQuiet: () -> Unit,
+    tapMode: TapMode,
+    onTapMode: () -> Unit,
     onErrorNext: () -> Unit,
 ) {
+    var moreOpen by remember { mutableStateOf(false) }
     // Cada botón avisa de la interacción para que los controles no se oculten
     fun act(action: () -> Unit): () -> Unit = { onInteraction(); action() }
 
@@ -169,15 +184,25 @@ fun PlayerControls(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     )
-                    ControlIcon(Icons.Default.Audiotrack, "Pista de audio", act(onAudio))
                     ControlIcon(Icons.Default.Subtitles, "Subtítulos", act(onSubtitles))
                     TextButton(onClick = act(onSpeed), modifier = Modifier.background(Glass, CircleShape)) {
                         Icon(Icons.Default.Speed, contentDescription = "Velocidad", tint = Color.White)
                         Spacer(Modifier.width(4.dp))
                         Text(speedLabel(speed), color = Color.White)
                     }
-                    ControlIcon(Icons.Default.Share, "Compartir", act(onShare))
-                    ControlIcon(Icons.Default.PictureInPictureAlt, "Ventana flotante", onPip)
+                    // Menos usados en un menú, para que el título tenga espacio en vertical
+                    Box {
+                        ControlIcon(Icons.Default.MoreVert, "Más opciones", act { moreOpen = true })
+                        DropdownMenu(expanded = moreOpen, onDismissRequest = { moreOpen = false }) {
+                            MoreItem("Pista de audio", Icons.Default.Audiotrack) { moreOpen = false; onInteraction(); onAudio() }
+                            MoreItem("Compartir", Icons.Default.Share) { moreOpen = false; onInteraction(); onShare() }
+                            MoreItem("Ventana flotante", Icons.Default.PictureInPictureAlt) { moreOpen = false; onPip() }
+                            MoreItem(
+                                "Doble toque a los lados: ${tapMode.label.lowercase()}",
+                                Icons.Default.TouchApp,
+                            ) { moreOpen = false; onInteraction(); onTapMode() }
+                        }
+                    }
                 }
 
                 // Botones centrales
@@ -247,11 +272,26 @@ fun PlayerControls(
                             highlighted = repeatMode != Player.REPEAT_MODE_OFF,
                         )
                         ControlIcon(Icons.Default.Shuffle, "Aleatorio", act(onShuffle), highlighted = shuffle)
+                        ControlIcon(
+                            if (quietOn) Icons.Default.DoNotDisturbOn else Icons.Default.DoNotDisturbOff,
+                            if (quietOn) "Desactivar No molestar" else "Activar No molestar",
+                            act(onQuiet),
+                            highlighted = quietOn,
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun MoreItem(text: String, icon: ImageVector, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(text) },
+        leadingIcon = { Icon(icon, contentDescription = null) },
+        onClick = onClick,
+    )
 }
 
 @Composable

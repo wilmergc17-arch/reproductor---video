@@ -4,6 +4,8 @@
 
     <!-- Para el video de prueba y las direcciones de red -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Botón "No molestar" del reproductor: silenciar notificaciones mientras se ve un video -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <!-- Leer los videos del teléfono para la biblioteca -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <!-- Android 14+: acceso solo a los videos que el usuario elija -->
@@ -32,6 +34,8 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            tools:ignore="LockedOrientationActivity,DiscouragedApi"
             android:resizeableActivity="true"
             android:supportsPictureInPicture="true"
             android:exported="true">

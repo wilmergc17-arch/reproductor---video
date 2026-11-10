@@ -16,6 +16,7 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.wilmer.reproductor.data.QuietMode
 import com.wilmer.reproductor.ui.LibraryViewModel
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
@@ -40,6 +41,8 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         if (savedInstanceState == null) {
+            // Si la app se cerró de golpe con No molestar activado desde el reproductor, se restaura
+            QuietMode(this).stop()
             playback = intent.playbackOrNull()
         }
         setContent {
