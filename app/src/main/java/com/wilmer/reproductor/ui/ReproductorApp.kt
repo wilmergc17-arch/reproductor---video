@@ -37,6 +37,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.wilmer.reproductor.data.ResumeStore
 import com.wilmer.reproductor.data.ScanSettings
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -177,7 +178,7 @@ fun ReproductorApp(
 ) {
     // La biblioteca sigue debajo del reproductor para conservar la pestaña y la posición
     Box(Modifier.fillMaxSize()) {
-        LibraryScreen(library, onPlay)
+        LibraryScreen(library, onPlay, playerOpen = playback != null)
         if (playback != null) {
             // key: una nueva cola crea un reproductor nuevo
             key(playback) {
@@ -196,7 +197,7 @@ fun ReproductorApp(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit) {
+fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit, playerOpen: Boolean = false) {
     val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val playlists by viewModel.playlists.playlists.collectAsState()
@@ -306,6 +307,20 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     val selection = remember { Selection() }
     BackHandler(enabled = selection.active) { selection.clear() }
     val selectedVideos: () -> List<Video> = { selection.uris.mapNotNull { state.byUri[it] } }
+
+    // Ajustes y tema (pantalla encima de la biblioteca); Atrás la cierra primero
+    var settingsOpen by remember { mutableStateOf(false) }
+    BackHandler(enabled = settingsOpen) { settingsOpen = false }
+
+    // "Seguir viendo": videos a medias; se recalcula al cerrar el reproductor
+    val resumeStore = remember { ResumeStore(context) }
+    val continueWatching = remember(playerOpen, state.loaded, state.videos.size) {
+        resumeStore.inProgress().mapNotNull { (uri, position) ->
+            state.byUri[uri]?.takeIf { it.durationMs > 0 }?.let { v ->
+                v to (position.toFloat() / v.durationMs).coerceIn(0f, 1f)
+            }
+        }.take(15)
+    }
 
     // Videos sobre los que se puede filtrar en la pantalla actual (null = sin filtros aquí)
     val filterScope: List<Video>? = when (tab) {
@@ -468,6 +483,10 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                             DropdownMenuItem(
+                                text = { Text("Ajustes y tema") },
+                                onClick = { menuOpen = false; settingsOpen = true },
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Abrir archivo…") },
                                 onClick = { menuOpen = false; openFile.launch(arrayOf("video/*")) },
                             )
@@ -571,6 +590,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                 else -> when (tab) {
                     Tab.VIDEOS -> VideosTab(
                         videos = state.videos, sort = sort, query = query, play = play, askAdd = askAdd,
+                        continueWatching = continueWatching,
                     )
                     Tab.CARPETAS -> FoldersTab(
                         state = state,
@@ -637,6 +657,10 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
             },
             dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
         )
+    }
+
+    if (settingsOpen) {
+        SettingsScreen(onClose = { settingsOpen = false })
     }
 
     if (sourcesDialog) {

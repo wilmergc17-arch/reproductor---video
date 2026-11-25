@@ -16,7 +16,16 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import com.wilmer.reproductor.data.AppSettings
 import com.wilmer.reproductor.data.QuietMode
+import com.wilmer.reproductor.ui.IntroAnimation
+import com.wilmer.reproductor.ui.theme.isLight
 import com.wilmer.reproductor.ui.LibraryViewModel
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
@@ -35,18 +44,22 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // La app siempre es oscura: íconos claros en las barras aunque el teléfono use tema claro
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        val settings = AppSettings.get(this)
+        applyBarStyle(settings.current.theme.isLight())
         if (savedInstanceState == null) {
             // Si la app se cerró de golpe con No molestar activado desde el reproductor, se restaura
             QuietMode(this).stop()
             playback = intent.playbackOrNull()
         }
+        // La animación de inicio solo al abrir la app, no al abrir un video desde otra app
+        val showIntro = savedInstanceState == null && playback == null
         setContent {
-            RepropowerTheme {
+            val current by settings.state.collectAsState()
+            val light = current.theme.isLight()
+            LaunchedEffect(light) { applyBarStyle(light) }
+            var intro by remember { mutableStateOf(showIntro) }
+            RepropowerTheme(current.theme) {
+                Box(Modifier.fillMaxSize()) {
                 ReproductorApp(
                     library = library,
                     playback = playback,
@@ -57,8 +70,20 @@ class MainActivity : ComponentActivity() {
                     onVideoSize = { w, h -> videoRatio = safeRatio(w, h) },
                     onEnterPip = ::enterPip,
                 )
+                if (intro) IntroAnimation(onDone = { intro = false })
+                }
             }
         }
+    }
+
+    /** Íconos de las barras del sistema claros u oscuros según el tema. */
+    private fun applyBarStyle(light: Boolean) {
+        val style = if (light) {
+            SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.dark(Color.TRANSPARENT)
+        }
+        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
 
     override fun onNewIntent(intent: Intent) {

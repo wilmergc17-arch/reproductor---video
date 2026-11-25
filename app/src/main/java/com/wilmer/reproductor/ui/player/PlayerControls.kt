@@ -36,6 +36,8 @@ import androidx.compose.material.icons.filled.DoNotDisturbOff
 import androidx.compose.material.icons.filled.DoNotDisturbOn
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.Bedtime
+import com.wilmer.reproductor.data.TapMode
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.getValue
@@ -118,6 +120,8 @@ fun PlayerControls(
     onQuiet: () -> Unit,
     tapMode: TapMode,
     onTapMode: () -> Unit,
+    sleepLabel: String,
+    onSleep: () -> Unit,
     onErrorNext: () -> Unit,
 ) {
     var moreOpen by remember { mutableStateOf(false) }
@@ -201,6 +205,9 @@ fun PlayerControls(
                                 "Doble toque a los lados: ${tapMode.label.lowercase()}",
                                 Icons.Default.TouchApp,
                             ) { moreOpen = false; onInteraction(); onTapMode() }
+                            MoreItem("Temporizador: $sleepLabel", Icons.Default.Bedtime) {
+                                moreOpen = false; onInteraction(); onSleep()
+                            }
                         }
                     }
                 }

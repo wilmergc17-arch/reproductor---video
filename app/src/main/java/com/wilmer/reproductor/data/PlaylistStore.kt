@@ -92,6 +92,8 @@ class PlaylistStore(context: Context) {
 /** Recuerda dónde se quedó cada video para continuar desde ahí, como VLC. */
 class ResumeStore(context: Context) {
     private val prefs = context.getSharedPreferences("posiciones", Context.MODE_PRIVATE)
+    // Cuándo se vio por última vez cada video, para ordenar "Seguir viendo"
+    private val dates = context.getSharedPreferences("posiciones_fecha", Context.MODE_PRIVATE)
 
     fun get(uri: String): Long = prefs.getLong(uri, 0L)
 
@@ -101,8 +103,17 @@ class ResumeStore(context: Context) {
             clear(uri)
         } else {
             prefs.edit().putLong(uri, positionMs).apply()
+            dates.edit().putLong(uri, System.currentTimeMillis()).apply()
         }
     }
 
-    fun clear(uri: String) = prefs.edit().remove(uri).apply()
+    fun clear(uri: String) {
+        prefs.edit().remove(uri).apply()
+        dates.edit().remove(uri).apply()
+    }
+
+    /** Videos a medias: dirección y posición, del visto más recientemente al más antiguo. */
+    fun inProgress(): List<Pair<String, Long>> =
+        prefs.all.mapNotNull { (uri, value) -> (value as? Long)?.takeIf { it > 0 }?.let { uri to it } }
+            .sortedByDescending { (uri, _) -> dates.getLong(uri, 0L) }
 }

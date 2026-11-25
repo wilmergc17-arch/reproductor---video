@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Fondo del ícono de Repropower: degradado naranja → rosa → violeta -->
+<!-- Fondo del ícono: degradado amarillo → rosa → violeta con dos burbujas de luz -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -14,10 +14,18 @@
                 android:startY="0"
                 android:endX="108"
                 android:endY="108">
-                <item android:offset="0" android:color="#FFFF7A18" />
-                <item android:offset="0.5" android:color="#FFFF2D78" />
-                <item android:offset="1" android:color="#FF7B2FF7" />
+                <item android:offset="0" android:color="#FFFFB800" />
+                <item android:offset="0.45" android:color="#FFFF3D7F" />
+                <item android:offset="1" android:color="#FF6C2BFF" />
             </gradient>
         </aapt:attr>
     </path>
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.14"
+        android:pathData="M4,30 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0" />
+    <path
+        android:fillColor="#000000"
+        android:fillAlpha="0.12"
+        android:pathData="M58,88 a28,28 0 1,0 56,0 a28,28 0 1,0 -56,0" />
 </vector>

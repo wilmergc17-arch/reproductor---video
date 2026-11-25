@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Botón "No molestar" del reproductor: silenciar notificaciones mientras se ve un video -->
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- Audio en segundo plano: seguir sonando con la pantalla apagada -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- Leer los videos del teléfono para la biblioteca -->
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <!-- Android 14+: acceso solo a los videos que el usuario elija -->
@@ -62,6 +66,10 @@
                 <data android:mimeType="application/vnd.apple.mpegurl" />
             </intent-filter>
         </activity>
+        <service
+            android:name=".PlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
         <!-- Para compartir con otras apps los videos encontrados por el escaneo de carpetas -->
         <provider
             android:name="androidx.core.content.FileProvider"

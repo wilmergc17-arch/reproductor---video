@@ -56,7 +56,13 @@ import androidx.media3.ui.PlayerView
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Column
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.unit.dp
+import com.wilmer.reproductor.PlaybackService
+import com.wilmer.reproductor.data.AppSettings
 import com.wilmer.reproductor.data.QuietMode
+import com.wilmer.reproductor.data.TapMode
 import com.wilmer.reproductor.data.ResumeStore
 import com.wilmer.reproductor.ui.PlaybackRequest
 import com.wilmer.reproductor.ui.QueueItem
@@ -81,16 +87,14 @@ enum class RotationMode(val label: String) {
     LIBRE("Girar libre"),
 }
 
-/** Qué hace el doble toque en los lados izquierdo y derecho de la pantalla. */
-enum class TapMode(val label: String) {
-    SALTAR("Adelantar o atrasar 10 s"),
-    CAMBIAR_VIDEO("Video siguiente o anterior"),
-}
-
 /** La app y el reproductor abren en vertical; al cerrar el video se vuelve a esto. */
 private const val APP_ORIENTATION = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
-private enum class DragMode { NONE, SEEK, VOLUME, BRIGHTNESS }
+/** IGNORED: el dedo empezó en un borde (gestos de Android) o ese gesto está apagado en Ajustes. */
+private enum class DragMode { NONE, IGNORED, SEEK, VOLUME, BRIGHTNESS }
+
+/** Opciones del temporizador para apagar: minutos (0 = al terminar el video actual). */
+val SLEEP_OPTIONS = listOf(15, 30, 45, 60, 0)
 
 /** Ancho completo de la pantalla al deslizar = 100 segundos de avance o retroceso. */
 private const val SEEK_MS_PER_SCREEN = 100_000L
@@ -112,7 +116,10 @@ fun PlayerScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val resume = remember { ResumeStore(context) }
     val quiet = remember { QuietMode(context) }
-    val playerPrefs = remember { context.getSharedPreferences("reproductor", Context.MODE_PRIVATE) }
+    val appSettings = remember { AppSettings.get(context) }
+    val settings by appSettings.state.collectAsState()
+    val currentSettings by rememberUpdatedState(settings)
+    val currentInPip by rememberUpdatedState(inPip)
     val audio = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     val currentOnPlayingChanged by rememberUpdatedState(onPlayingChanged)
     val currentOnVideoSize by rememberUpdatedState(onVideoSize)
@@ -139,6 +146,8 @@ fun PlayerScreen(
                 true,
             )
             .setHandleAudioBecomingNoisy(true)
+            // Sigue sonando con la pantalla apagada si está activado el audio en segundo plano
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
             .apply {
                 setMediaItems(request.items.map { it.toMediaItem() }, start, startPosition)
@@ -171,11 +180,16 @@ fun PlayerScreen(
     var rotationMode by remember { mutableStateOf(RotationMode.VERTICAL) }
     var dialog by remember { mutableStateOf<PlayerDialog?>(null) }
     var seekPreviewMs by remember { mutableStateOf<Long?>(null) }
-    var tapMode by remember {
-        mutableStateOf(
-            TapMode.entries.firstOrNull { it.name == playerPrefs.getString("doble_toque", null) } ?: TapMode.SALTAR
-        )
-    }
+    val tapMode = settings.tapMode
+    // En pausa aparecen los botones de Android (atrás, inicio, multitarea) y se apagan los gestos
+    var paused by remember { mutableStateOf(false) }
+    // Mantener presionado: 2x mientras se sostiene el dedo
+    var boostFrom by remember { mutableStateOf<Float?>(null) }
+    // Temporizador para apagar: hora de parada, o "al terminar este video"
+    var sleepAt by remember { mutableStateOf<Long?>(null) }
+    var sleepAtEnd by remember { mutableStateOf(false) }
+    // La ventana flotante se cerró (no solo se ocultó la app): entonces sí se pausa
+    var pipSession by remember { mutableStateOf(false) }
     // No molestar: se recuerda entre videos; se activa solo mientras el reproductor está a la vista
     var quietOn by remember { mutableStateOf(quiet.wanted && quiet.hasAccess) }
     var awaitingQuietAccess by remember { mutableStateOf(false) }
@@ -219,6 +233,7 @@ fun PlayerScreen(
             }
 
             override fun onEvents(p: Player, events: Player.Events) {
+                paused = !p.playWhenReady || p.playbackState == Player.STATE_ENDED
                 hasPrevious = p.hasPreviousMediaItem()
                 hasNext = p.hasNextMediaItem()
                 repeatMode = p.repeatMode
@@ -235,6 +250,14 @@ fun PlayerScreen(
                     val w = (videoSize.width * videoSize.pixelWidthHeightRatio).roundToInt()
                     videoAspect = w.toFloat() / videoSize.height
                     currentOnVideoSize(w, videoSize.height)
+                }
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtEnd) {
+                    sleepAtEnd = false
+                    player.pauseAtEndOfMediaItems = false
+                    showOsd("Temporizador: video pausado")
                 }
             }
 
@@ -266,11 +289,15 @@ fun PlayerScreen(
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
                     player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
-                    player.pause()
+                    // Con audio en segundo plano sigue sonando (pantalla apagada u otra app),
+                    // salvo que se haya cerrado la ventana flotante
+                    if (!currentSettings.backgroundAudio || pipSession || currentInPip) player.pause()
+                    pipSession = false
                     appVisible = false
                 }
                 Lifecycle.Event.ON_START -> appVisible = true
                 Lifecycle.Event.ON_RESUME -> {
+                    pipSession = false
                     // De vuelta de Ajustes: si ya dio el permiso, se activa No molestar
                     if (awaitingQuietAccess) {
                         awaitingQuietAccess = false
@@ -318,6 +345,26 @@ fun PlayerScreen(
         onDispose { quiet.stop() }
     }
 
+    LaunchedEffect(inPip) { if (inPip) pipSession = true }
+
+    // Audio en segundo plano: un aviso fijo mantiene viva la app mientras suena
+    DisposableEffect(settings.backgroundAudio, isPlaying, title) {
+        if (settings.backgroundAudio && isPlaying) PlaybackService.start(context, title)
+        else PlaybackService.stop(context)
+        onDispose { }
+    }
+    DisposableEffect(Unit) { onDispose { PlaybackService.stop(context) } }
+
+    // Temporizador para apagar
+    LaunchedEffect(sleepAt) {
+        val at = sleepAt ?: return@LaunchedEffect
+        delay((at - System.currentTimeMillis()).coerceAtLeast(0))
+        player.pause()
+        sleepAt = null
+        controlsVisible = true
+        showOsd("Temporizador: video pausado")
+    }
+
     LaunchedEffect(osdTick) {
         if (osd != null) {
             delay(1_200)
@@ -325,13 +372,20 @@ fun PlayerScreen(
         }
     }
 
-    // Pantalla completa: oculta las barras del sistema mientras se ve el video
+    // Pantalla completa mientras se reproduce; en pausa se muestran las barras de Android
     val view = LocalView.current
+    val barsController = remember(activity) {
+        activity?.window?.let { WindowCompat.getInsetsController(it, view) }?.apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+    LaunchedEffect(paused, inPip) {
+        if (paused || inPip) barsController?.show(WindowInsetsCompat.Type.systemBars())
+        else barsController?.hide(WindowInsetsCompat.Type.systemBars())
+    }
     DisposableEffect(activity) {
         val window = activity?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        controller?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        controller?.hide(WindowInsetsCompat.Type.systemBars())
+        val controller = barsController
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation = APP_ORIENTATION
@@ -397,6 +451,21 @@ fun PlayerScreen(
                     .fillMaxSize()
                     .pointerInput(locked, tapMode) {
                         detectTapGestures(
+                            onPress = {
+                                tryAwaitRelease()
+                                boostFrom?.let { before ->
+                                    player.setPlaybackSpeed(before)
+                                    boostFrom = null
+                                    osd = null
+                                }
+                            },
+                            onLongPress = {
+                                if (!locked && player.isPlaying && boostFrom == null) {
+                                    boostFrom = player.playbackParameters.speed
+                                    player.setPlaybackSpeed(2f)
+                                    osd = "2x ▶▶  suelta para volver"
+                                }
+                            },
                             onTap = {
                                 if (controlsVisible) controlsVisible = false else poke()
                             },
@@ -425,8 +494,12 @@ fun PlayerScreen(
                             },
                         )
                     }
-                    .pointerInput(locked) {
-                        if (locked) return@pointerInput
+                    .pointerInput(locked, paused, settings) {
+                        if (locked || paused) return@pointerInput
+                        // Zonas de los bordes reservadas a los gestos de Android (inicio, atrás, multitarea)
+                        val sideEdge = 36.dp.toPx()
+                        val topEdge = 56.dp.toPx()
+                        val bottomEdge = 72.dp.toPx()
                         var mode = DragMode.NONE
                         var total = Offset.Zero
                         var startPos = 0L
@@ -436,7 +509,9 @@ fun PlayerScreen(
                         val maxVolume = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                         detectDragGestures(
                             onDragStart = { start ->
-                                mode = DragMode.NONE
+                                val atEdge = start.x < sideEdge || start.x > size.width - sideEdge ||
+                                    start.y < topEdge || start.y > size.height - bottomEdge
+                                mode = if (atEdge) DragMode.IGNORED else DragMode.NONE
                                 total = Offset.Zero
                                 startX = start.x
                                 startPos = player.currentPosition
@@ -453,14 +528,22 @@ fun PlayerScreen(
                                 mode = DragMode.NONE
                             },
                             onDrag = { change, amount ->
+                                if (mode == DragMode.IGNORED) return@detectDragGestures
                                 change.consume()
                                 total += amount
                                 if (mode == DragMode.NONE) {
-                                    mode = when {
+                                    val wanted = when {
                                         abs(total.x) > abs(total.y) -> DragMode.SEEK
                                         startX < size.width / 2f -> DragMode.BRIGHTNESS
                                         else -> DragMode.VOLUME
                                     }
+                                    val enabled = when (wanted) {
+                                        DragMode.SEEK -> settings.gestureSeek
+                                        DragMode.BRIGHTNESS -> settings.gestureBrightness
+                                        else -> settings.gestureVolume
+                                    }
+                                    mode = if (enabled) wanted else DragMode.IGNORED
+                                    if (!enabled) return@detectDragGestures
                                 }
                                 when (mode) {
                                     DragMode.SEEK -> {
@@ -483,7 +566,7 @@ fun PlayerScreen(
                                         }
                                         showOsd("Brillo ${(value * 100).roundToInt()} %")
                                     }
-                                    DragMode.NONE -> Unit
+                                    DragMode.NONE, DragMode.IGNORED -> Unit
                                 }
                             },
                         )
@@ -571,10 +654,16 @@ fun PlayerScreen(
                 },
                 tapMode = tapMode,
                 onTapMode = {
-                    tapMode = TapMode.entries[(tapMode.ordinal + 1) % TapMode.entries.size]
-                    playerPrefs.edit().putString("doble_toque", tapMode.name).apply()
-                    showOsd("Doble toque a los lados: ${tapMode.label.lowercase()}")
+                    val next = TapMode.entries[(tapMode.ordinal + 1) % TapMode.entries.size]
+                    appSettings.update { it.copy(tapMode = next) }
+                    showOsd("Doble toque a los lados: ${next.label.lowercase()}")
                 },
+                sleepLabel = when {
+                    sleepAtEnd -> "al terminar el video"
+                    sleepAt != null -> "quedan ${((sleepAt!! - System.currentTimeMillis()) / 60_000 + 1)} min"
+                    else -> "apagado"
+                },
+                onSleep = { dialog = PlayerDialog.SLEEP },
                 onShare = {
                     player.currentMediaItem?.localConfiguration?.uri?.let { shareVideos(context, listOf(it)) }
                 },
@@ -622,6 +711,40 @@ fun PlayerScreen(
                 dialog = null
             },
         )
+        PlayerDialog.SLEEP -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Temporizador para apagar") },
+            text = {
+                Column {
+                    SLEEP_OPTIONS.forEach { minutes ->
+                        TextButton(onClick = {
+                            dialog = null
+                            if (minutes == 0) {
+                                sleepAt = null
+                                sleepAtEnd = true
+                                player.pauseAtEndOfMediaItems = true
+                                showOsd("Se pausará al terminar este video")
+                            } else {
+                                sleepAtEnd = false
+                                player.pauseAtEndOfMediaItems = false
+                                sleepAt = System.currentTimeMillis() + minutes * 60_000L
+                                showOsd("Se pausará en $minutes min")
+                            }
+                        }) { Text(if (minutes == 0) "Al terminar este video" else "$minutes minutos") }
+                    }
+                    if (sleepAt != null || sleepAtEnd) {
+                        TextButton(onClick = {
+                            dialog = null
+                            sleepAt = null
+                            sleepAtEnd = false
+                            player.pauseAtEndOfMediaItems = false
+                            showOsd("Temporizador apagado")
+                        }) { Text("Apagar temporizador") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Cerrar") } },
+        )
         PlayerDialog.QUIET_ACCESS -> AlertDialog(
             onDismissRequest = { dialog = null },
             title = { Text("Permitir No molestar") },
@@ -649,7 +772,7 @@ fun PlayerScreen(
     }
 }
 
-enum class PlayerDialog { SPEED, AUDIO, SUBTITLES, QUIET_ACCESS }
+enum class PlayerDialog { SPEED, AUDIO, SUBTITLES, QUIET_ACCESS, SLEEP }
 
 fun speedLabel(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"

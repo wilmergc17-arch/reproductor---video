@@ -2,6 +2,9 @@ package com.wilmer.reproductor.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
@@ -142,9 +145,68 @@ fun VideosTab(
     query: String,
     play: (List<Video>, Int) -> Unit,
     askAdd: (List<Video>) -> Unit,
+    continueWatching: List<Pair<Video, Float>> = emptyList(),
 ) {
     val sorted = remember(videos, sort, query) { videos.filter { it.matchesQuery(query) }.sortedFor(sort) }
-    VideoList(sorted, "No hay videos en el teléfono.", play, askAdd, header = { LibrarySummary(sorted) })
+    VideoList(sorted, "No hay videos en el teléfono.", play, askAdd, header = {
+        Column {
+            if (continueWatching.isNotEmpty() && query.isBlank()) ContinueWatchingRow(continueWatching, play)
+            LibrarySummary(sorted)
+        }
+    })
+}
+
+/** Fila "Seguir viendo": videos a medias con su barra de progreso. */
+@Composable
+private fun ContinueWatchingRow(entries: List<Pair<Video, Float>>, play: (List<Video>, Int) -> Unit) {
+    Column {
+        Text(
+            "Seguir viendo",
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(start = 18.dp, top = 8.dp, bottom = 8.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(entries, key = { it.first.uri.toString() }) { (video, progress) ->
+                Column(
+                    Modifier
+                        .width(180.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { play(listOf(video), 0) },
+                ) {
+                    Box {
+                        VideoThumbnail(video.uri, Modifier.fillMaxWidth().aspectRatio(16f / 9f), corner = 16.dp)
+                        Box(
+                            Modifier.matchParentSize().background(Color.Black.copy(alpha = 0.25f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = "Seguir viendo",
+                                tint = Color.White,
+                                modifier = Modifier.size(36.dp),
+                            )
+                        }
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(4.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = Color.White.copy(alpha = 0.3f),
+                        )
+                    }
+                    Text(
+                        video.displayTitle(),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 2.dp, end = 2.dp, top = 6.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 fun List<Video>.sortedFor(order: SortOrder): List<Video> = when (order) {

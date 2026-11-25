@@ -2,7 +2,16 @@
 
 Reproductor de video para Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.8.0)
+## Qué hace (versión 0.9.0)
+
+### Novedades 0.9.0
+- **Ajustes y tema** (menú ⋮ de la biblioteca): paletas Power, Océano, Esmeralda, Atardecer, Negro AMOLED, Claro y "Colores de mi fondo" (Android 12+).
+- **Gestos más seguros:** los bordes de la pantalla quedan para los gestos de Android; en pausa aparecen los botones de Android (atrás, inicio, multitarea) y se apagan los gestos del video; cada gesto (volumen, brillo, adelantar) se puede apagar en Ajustes.
+- **Mantener presionado** el video lo pone a 2x mientras se sostiene el dedo.
+- **Temporizador para apagar** (15, 30, 45, 60 min o al terminar el video) en el menú ⋮ del reproductor.
+- **Seguir viendo:** fila arriba en Videos con los videos a medias y su progreso.
+- **Audio en segundo plano** (opcional en Ajustes): sigue sonando con la pantalla apagada, con un aviso en la barra de notificaciones.
+- Animación al abrir la app e ícono nuevo.
 
 ### Diseño
 - Tema oscuro con el degradado de la marca (naranja, rosa, violeta) y un ícono nuevo: botón de reproducir con un rayo.

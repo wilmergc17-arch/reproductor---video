@@ -184,6 +184,7 @@ fun VideoThumbnail(uri: Uri, modifier: Modifier = Modifier, durationMs: Long = 0
 
 /** Nombre de la app con "power" en el degradado de la marca. */
 @OptIn(ExperimentalTextApi::class)
+@Composable
 fun brandName(): AnnotatedString = buildAnnotatedString {
     append("Repro")
     withStyle(SpanStyle(brush = BrandGradientHorizontal)) { append("power") }
