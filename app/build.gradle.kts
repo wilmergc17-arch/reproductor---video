@@ -12,11 +12,25 @@ android {
         applicationId = "com.wilmer.reproductor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.8.0"
+        versionCode = 11
+        versionName = "0.8.1"
+    }
+
+    // Llave de depuración fija (guardada en el repo): cada APK de GitHub Actions queda firmado igual,
+    // así las actualizaciones se instalan encima de la versión anterior sin desinstalar.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
