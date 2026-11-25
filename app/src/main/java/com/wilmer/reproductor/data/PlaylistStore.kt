@@ -112,6 +112,12 @@ class ResumeStore(context: Context) {
         dates.edit().remove(uri).apply()
     }
 
+    /** Borra todo el historial de "Seguir viendo". */
+    fun clearAll() {
+        prefs.edit().clear().apply()
+        dates.edit().clear().apply()
+    }
+
     /** Videos a medias: dirección y posición, del visto más recientemente al más antiguo. */
     fun inProgress(): List<Pair<String, Long>> =
         prefs.all.mapNotNull { (uri, value) -> (value as? Long)?.takeIf { it > 0 }?.let { uri to it } }

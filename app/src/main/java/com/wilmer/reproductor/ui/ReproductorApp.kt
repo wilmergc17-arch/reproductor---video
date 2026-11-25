@@ -371,6 +371,9 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
     }
 
     val play: (List<Video>, Int) -> Unit = { list, index -> onPlay(PlaybackRequest(list.toQueue(), index)) }
+    val playReels: (List<Video>, Int) -> Unit = { list, index ->
+        onPlay(PlaybackRequest(list.toQueue(), index, reels = true))
+    }
     val askAdd: (List<Video>) -> Unit = { list -> addToPlaylist = list.map { it.toEntry() } }
 
     CompositionLocalProvider(
@@ -627,7 +630,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPlay: (PlaybackRequest) -> Unit
                         empty = "No hay reels: aquí aparecen los videos de menos de 10 minutos.",
                         columns = 3,
                         aspectRatio = 9f / 16f,
-                        play = play,
+                        play = playReels,
                         askAdd = askAdd,
                     )
                     Tab.LISTAS -> Unit

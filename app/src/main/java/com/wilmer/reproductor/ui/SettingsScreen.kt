@@ -21,7 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -34,7 +37,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import android.widget.Toast
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +50,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.wilmer.reproductor.data.AppSettings
+import com.wilmer.reproductor.data.ResumeStore
+import com.wilmer.reproductor.data.SEEK_STEP_OPTIONS
+import com.wilmer.reproductor.data.SPEED_OPTIONS
+import com.wilmer.reproductor.data.SUBTITLE_SCALES
+import com.wilmer.reproductor.ui.player.AspectMode
+import com.wilmer.reproductor.ui.player.speedLabel
 import com.wilmer.reproductor.data.TapMode
 import com.wilmer.reproductor.data.ThemeChoice
 import com.wilmer.reproductor.ui.theme.backgroundFor
@@ -103,6 +115,9 @@ fun SettingsScreen(onClose: () -> Unit) {
             SwitchRow("Adelantar o atrasar", "Deslizar a la izquierda o a la derecha", settings.gestureSeek) { v ->
                 store.update { it.copy(gestureSeek = v) }
             }
+            SwitchRow("Mantener presionado para 2x", "Mientras sostienes el dedo el video va al doble", settings.holdForSpeed) { v ->
+                store.update { it.copy(holdForSpeed = v) }
+            }
             Hint(
                 "Los bordes de la pantalla quedan libres para los gestos de Android (inicio, atrás, multitarea). " +
                     "En pausa aparecen los botones de Android y los gestos del video se apagan."
@@ -122,16 +137,60 @@ fun SettingsScreen(onClose: () -> Unit) {
                 }
             }
 
+            ChoiceRow(
+                "Salto de adelantar o atrasar",
+                SEEK_STEP_OPTIONS.map { it to "$it segundos" },
+                settings.seekStepSec,
+            ) { v -> store.update { it.copy(seekStepSec = v) } }
+
             SectionTitle("Reproducción")
+            SwitchRow("Reproducir el siguiente", "Al terminar un video empieza solo el siguiente de la lista", settings.autoNext) { v ->
+                store.update { it.copy(autoNext = v) }
+            }
+            SwitchRow("Recordar dónde me quedé", "Cada video continúa desde donde lo dejaste", settings.rememberPosition) { v ->
+                store.update { it.copy(rememberPosition = v) }
+            }
+            ChoiceRow("Velocidad al abrir", SPEED_OPTIONS.map { it to speedLabel(it) }, settings.defaultSpeed) { v ->
+                store.update { it.copy(defaultSpeed = v) }
+            }
+            ChoiceRow(
+                "Formato de imagen al abrir",
+                AspectMode.entries.map { it.name to it.label },
+                settings.defaultAspect,
+            ) { v -> store.update { it.copy(defaultAspect = v) } }
             SwitchRow(
                 "Audio en segundo plano",
                 "Sigue sonando con la pantalla apagada o mientras usas otra app",
                 settings.backgroundAudio,
             ) { v -> store.update { it.copy(backgroundAudio = v) } }
+            SwitchRow(
+                "Ventana flotante al salir",
+                "Si sales de la app con un video sonando, sigue en una ventana pequeña",
+                settings.autoPip,
+            ) { v -> store.update { it.copy(autoPip = v) } }
+            Hint("El temporizador para apagar está en el menú ⋮ del reproductor.")
+
+            SectionTitle("Reels")
+            SwitchRow("Repetir cada reel", "El reel se repite hasta que deslizas al siguiente", settings.loopReels) { v ->
+                store.update { it.copy(loopReels = v) }
+            }
             Hint(
-                "Mantén presionado el video para verlo a 2x mientras lo sostienes. " +
-                    "El temporizador para apagar está en el menú ⋮ del reproductor."
+                "En Reels desliza arriba para el siguiente y abajo para el anterior; un toque pausa. " +
+                    "El volumen y el brillo se manejan con los botones y ajustes del teléfono."
             )
+
+            SectionTitle("Subtítulos")
+            ChoiceRow("Tamaño del texto", SUBTITLE_SCALES, settings.subtitleScale) { v ->
+                store.update { it.copy(subtitleScale = v) }
+            }
+
+            SectionTitle("Privacidad")
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp)) {
+                OutlinedButton(onClick = {
+                    ResumeStore(context).clearAll()
+                    Toast.makeText(context, "Historial de Seguir viendo borrado", Toast.LENGTH_SHORT).show()
+                }) { Text("Borrar historial de Seguir viendo") }
+            }
 
             SectionTitle("Acerca de")
             Hint("Repropower $version")
@@ -157,6 +216,37 @@ private fun Hint(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
     )
+}
+
+/** Fila con el valor elegido a la derecha; al tocarla se abre la lista de opciones. */
+@Composable
+private fun <T> ChoiceRow(title: String, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { open = true }
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(
+                options.firstOrNull { it.first == selected }?.second.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = { open = false; onSelect(value) },
+                    trailingIcon = if (value == selected) ({ Icon(Icons.Default.Check, contentDescription = null) }) else null,
+                )
+            }
+        }
+    }
 }
 
 @Composable

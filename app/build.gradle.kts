@@ -12,8 +12,8 @@ android {
         applicationId = "com.wilmer.reproductor"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.9.0"
+        versionCode = 13
+        versionName = "0.10.0"
     }
 
     // Llave de depuración fija (guardada en el repo): cada APK de GitHub Actions queda firmado igual,

@@ -94,7 +94,7 @@ class MainActivity : ComponentActivity() {
     // Al pulsar Inicio mientras se ve un video, sigue en una ventana flotante como VLC
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (playback != null && playing) enterPip()
+        if (playback != null && playing && AppSettings.get(this).current.autoPip) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {

@@ -2,7 +2,11 @@
 
 Reproductor de video para Android en Kotlin con Jetpack Compose y Media3 (ExoPlayer).
 
-## Qué hace (versión 0.9.0)
+## Qué hace (versión 0.10.0)
+
+### Novedades 0.10.0
+- **Reels tipo TikTok:** solo al abrir un video desde la sección Reels, deslizar arriba pasa al siguiente y abajo al anterior (con animación); un toque pausa o reanuda; cada reel se repite hasta que deslizas y la imagen se ajusta sola. Ahí el volumen y el brillo se manejan con los botones y ajustes del teléfono. Las demás secciones siguen igual.
+- **Más ajustes:** reproducir el siguiente automáticamente, recordar dónde me quedé, velocidad y formato de imagen al abrir, salto de adelantar o atrasar (5, 10, 15 o 30 s), mantener presionado para 2x, ventana flotante al salir, repetir reels, tamaño de subtítulos y borrar el historial de Seguir viendo.
 
 ### Novedades 0.9.0
 - **Ajustes y tema** (menú ⋮ de la biblioteca): paletas Power, Océano, Esmeralda, Atardecer, Negro AMOLED, Claro y "Colores de mi fondo" (Android 12+).

@@ -89,7 +89,13 @@ import java.util.Locale
 /** Un video para la cola de reproducción. */
 data class QueueItem(val uri: Uri, val title: String)
 
-data class PlaybackRequest(val items: List<QueueItem>, val startIndex: Int = 0, val shuffle: Boolean = false)
+/** reels = true: modo tipo TikTok (deslizar arriba o abajo cambia de video). */
+data class PlaybackRequest(
+    val items: List<QueueItem>,
+    val startIndex: Int = 0,
+    val shuffle: Boolean = false,
+    val reels: Boolean = false,
+)
 
 fun Video.displayTitle(): String = when (val k = kind) {
     is VideoKind.Episode -> if (k.episode > 0) "T${k.season} E${k.episode} · ${k.title}" else k.title

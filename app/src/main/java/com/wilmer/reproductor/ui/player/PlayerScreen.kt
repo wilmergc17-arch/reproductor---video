@@ -11,6 +11,10 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -25,11 +29,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -53,6 +59,7 @@ import androidx.media3.common.VideoSize
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,6 +76,7 @@ import com.wilmer.reproductor.ui.QueueItem
 import com.wilmer.reproductor.ui.formatDuration
 import com.wilmer.reproductor.ui.shareVideos
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -91,7 +99,10 @@ enum class RotationMode(val label: String) {
 private const val APP_ORIENTATION = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
 /** IGNORED: el dedo empezó en un borde (gestos de Android) o ese gesto está apagado en Ajustes. */
-private enum class DragMode { NONE, IGNORED, SEEK, VOLUME, BRIGHTNESS }
+private enum class DragMode { NONE, IGNORED, SEEK, VOLUME, BRIGHTNESS, REEL }
+
+/** En Reels: parte de la altura de la pantalla que hay que deslizar para cambiar de video. */
+private const val REEL_SWIPE_FRACTION = 0.18f
 
 /** Opciones del temporizador para apagar: minutos (0 = al terminar el video actual). */
 val SLEEP_OPTIONS = listOf(15, 30, 45, 60, 0)
@@ -131,13 +142,19 @@ fun PlayerScreen(
         osdTick++
     }
 
+    val reels = request.reels
+    // Recordar posición: apagado en Ajustes o en Reels (los reels empiezan siempre desde el inicio)
+    fun canResume() = !reels && currentSettings.rememberPosition
+    val seekStepMs = settings.seekStepSec * 1_000L
+
     val player = remember(request) {
+        val initial = appSettings.current
         val start = if (request.shuffle) request.items.indices.random() else request.startIndex
         val startUri = request.items[start].uri.toString()
-        val startPosition = resume.get(startUri)
+        val startPosition = if (!reels && initial.rememberPosition) resume.get(startUri) else 0L
         ExoPlayer.Builder(context)
-            .setSeekBackIncrementMs(10_000)
-            .setSeekForwardIncrementMs(10_000)
+            .setSeekBackIncrementMs(initial.seekStepSec * 1_000L)
+            .setSeekForwardIncrementMs(initial.seekStepSec * 1_000L)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(C.USAGE_MEDIA)
@@ -152,9 +169,15 @@ fun PlayerScreen(
             .apply {
                 setMediaItems(request.items.map { it.toMediaItem() }, start, startPosition)
                 shuffleModeEnabled = request.shuffle
+                if (reels && initial.loopReels) repeatMode = Player.REPEAT_MODE_ONE
+                pauseAtEndOfMediaItems = !initial.autoNext
+                if (initial.defaultSpeed != 1f) setPlaybackSpeed(initial.defaultSpeed)
                 prepare()
                 playWhenReady = true
-                if (startPosition > 0) showOsd("Continuando desde ${formatDuration(startPosition)}")
+                when {
+                    startPosition > 0 -> showOsd("Continuando desde ${formatDuration(startPosition)}")
+                    reels -> showOsd("Desliza arriba o abajo para cambiar de reel")
+                }
             }
     }
 
@@ -175,7 +198,12 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var interactionTick by remember { mutableIntStateOf(0) }
     var locked by remember { mutableStateOf(false) }
-    var aspectMode by remember { mutableStateOf(AspectMode.AJUSTAR) }
+    var aspectMode by remember {
+        mutableStateOf(AspectMode.entries.firstOrNull { it.name == settings.defaultAspect } ?: AspectMode.AJUSTAR)
+    }
+    // Animación de Reels: la imagen sigue al dedo y sale por arriba o por abajo
+    val reelOffset = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
     // Por defecto en vertical; el botón de rotación cambia a horizontal, según el video o libre
     var rotationMode by remember { mutableStateOf(RotationMode.VERTICAL) }
     var dialog by remember { mutableStateOf<PlayerDialog?>(null) }
@@ -219,11 +247,11 @@ fun PlayerScreen(
                 val previous = lastId
                 if (previous == id) return
                 if (previous != null) {
-                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) resume.clear(previous)
+                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || !canResume()) resume.clear(previous)
                     else resume.save(previous, lastPosition, lastDuration)
                 }
                 lastId = id
-                if (previous != null) {
+                if (previous != null && canResume()) {
                     val saved = resume.get(id)
                     if (saved > 0) {
                         player.seekTo(saved)
@@ -256,7 +284,7 @@ fun PlayerScreen(
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && sleepAtEnd) {
                     sleepAtEnd = false
-                    player.pauseAtEndOfMediaItems = false
+                    player.pauseAtEndOfMediaItems = !currentSettings.autoNext
                     showOsd("Temporizador: video pausado")
                 }
             }
@@ -277,7 +305,7 @@ fun PlayerScreen(
         lastId = player.currentMediaItem?.mediaId
         onDispose {
             player.removeListener(listener)
-            player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
+            if (canResume()) player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
             player.release()
             currentOnPlayingChanged(false)
         }
@@ -288,7 +316,7 @@ fun PlayerScreen(
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_STOP -> {
-                    player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
+                    if (canResume()) player.currentMediaItem?.mediaId?.let { resume.save(it, player.currentPosition, player.duration) }
                     // Con audio en segundo plano sigue sonando (pantalla apagada u otra app),
                     // salvo que se haya cerrado la ventana flotante
                     if (!currentSettings.backgroundAudio || pipSession || currentInPip) player.pause()
@@ -346,6 +374,18 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(inPip) { if (inPip) pipSession = true }
+
+    // Reels: los videos verticales llenan la pantalla y los horizontales se ven completos
+    LaunchedEffect(videoAspect) {
+        if (reels && videoAspect > 0f) aspectMode = if (videoAspect < 1f) AspectMode.RECORTAR else AspectMode.AJUSTAR
+    }
+
+    // Los botones de volumen del teléfono siempre controlan el sonido del video
+    DisposableEffect(activity) {
+        val before = activity?.volumeControlStream
+        activity?.volumeControlStream = AudioManager.STREAM_MUSIC
+        onDispose { before?.let { activity?.volumeControlStream = it } }
+    }
 
     // Audio en segundo plano: un aviso fijo mantiene viva la app mientras suena
     DisposableEffect(settings.backgroundAudio, isPlaying, title) {
@@ -429,7 +469,7 @@ fun PlayerScreen(
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().graphicsLayer { translationY = reelOffset.value },
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     useController = false
@@ -440,6 +480,7 @@ fun PlayerScreen(
             update = {
                 it.player = player
                 it.resizeMode = aspectMode.resizeMode
+                it.subtitleView?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * settings.subtitleScale)
                 it.keepScreenOn = isPlaying
             },
         )
@@ -449,7 +490,7 @@ fun PlayerScreen(
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(locked, tapMode) {
+                    .pointerInput(locked, tapMode, settings.holdForSpeed, seekStepMs) {
                         detectTapGestures(
                             onPress = {
                                 tryAwaitRelease()
@@ -460,21 +501,29 @@ fun PlayerScreen(
                                 }
                             },
                             onLongPress = {
-                                if (!locked && player.isPlaying && boostFrom == null) {
+                                if (!locked && settings.holdForSpeed && player.isPlaying && boostFrom == null) {
                                     boostFrom = player.playbackParameters.speed
                                     player.setPlaybackSpeed(2f)
                                     osd = "2x ▶▶  suelta para volver"
                                 }
                             },
                             onTap = {
-                                if (controlsVisible) controlsVisible = false else poke()
+                                when {
+                                    // Reels: un toque pausa o reanuda, como en TikTok
+                                    reels && !locked -> {
+                                        player.togglePlayPause()
+                                        if (player.playWhenReady) controlsVisible = false else poke()
+                                    }
+                                    controlsVisible -> controlsVisible = false
+                                    else -> poke()
+                                }
                             },
                             onDoubleTap = { offset ->
                                 if (locked) return@detectTapGestures
                                 val third = size.width / 3f
                                 when {
                                     offset.x < third -> when {
-                                        tapMode == TapMode.SALTAR -> { player.seekBack(); showOsd("−10 s") }
+                                        tapMode == TapMode.SALTAR -> { player.seekBack(); showOsd("−${seekStepMs / 1000} s") }
                                         player.hasPreviousMediaItem() -> {
                                             player.seekToPreviousMediaItem()
                                             showOsd("⏮ Video anterior")
@@ -482,7 +531,7 @@ fun PlayerScreen(
                                         else -> { player.seekTo(0); showOsd("Desde el inicio") }
                                     }
                                     offset.x > third * 2 -> when {
-                                        tapMode == TapMode.SALTAR -> { player.seekForward(); showOsd("+10 s") }
+                                        tapMode == TapMode.SALTAR -> { player.seekForward(); showOsd("+${seekStepMs / 1000} s") }
                                         player.hasNextMediaItem() -> {
                                             player.seekToNextMediaItem()
                                             showOsd("Video siguiente ⏭")
@@ -494,8 +543,9 @@ fun PlayerScreen(
                             },
                         )
                     }
-                    .pointerInput(locked, paused, settings) {
-                        if (locked || paused) return@pointerInput
+                    .pointerInput(locked, paused && !reels, settings) {
+                        // En Reels se puede deslizar aunque el video esté en pausa
+                        if (locked || (paused && !reels)) return@pointerInput
                         // Zonas de los bordes reservadas a los gestos de Android (inicio, atrás, multitarea)
                         val sideEdge = 36.dp.toPx()
                         val topEdge = 56.dp.toPx()
@@ -520,10 +570,16 @@ fun PlayerScreen(
                             },
                             onDragEnd = {
                                 if (mode == DragMode.SEEK) seekPreviewMs?.let { player.seekTo(it) }
+                                if (mode == DragMode.REEL) {
+                                    val height = size.height.toFloat()
+                                    val dy = total.y
+                                    scope.launch { finishReelSwipe(player, reelOffset, dy, height, ::showOsd) }
+                                }
                                 seekPreviewMs = null
                                 mode = DragMode.NONE
                             },
                             onDragCancel = {
+                                if (mode == DragMode.REEL) scope.launch { reelOffset.animateTo(0f, spring()) }
                                 seekPreviewMs = null
                                 mode = DragMode.NONE
                             },
@@ -534,11 +590,14 @@ fun PlayerScreen(
                                 if (mode == DragMode.NONE) {
                                     val wanted = when {
                                         abs(total.x) > abs(total.y) -> DragMode.SEEK
+                                        // Reels: arriba o abajo cambia de video; volumen y brillo con el teléfono
+                                        reels -> DragMode.REEL
                                         startX < size.width / 2f -> DragMode.BRIGHTNESS
                                         else -> DragMode.VOLUME
                                     }
                                     val enabled = when (wanted) {
                                         DragMode.SEEK -> settings.gestureSeek
+                                        DragMode.REEL -> true
                                         DragMode.BRIGHTNESS -> settings.gestureBrightness
                                         else -> settings.gestureVolume
                                     }
@@ -565,6 +624,12 @@ fun PlayerScreen(
                                             w.attributes = w.attributes.apply { screenBrightness = value }
                                         }
                                         showOsd("Brillo ${(value * 100).roundToInt()} %")
+                                    }
+                                    DragMode.REEL -> {
+                                        val y = total.y
+                                        // Sin video siguiente o anterior se resiste (se mueve menos)
+                                        val canGo = if (y < 0) player.hasNextMediaItem() else player.hasPreviousMediaItem()
+                                        scope.launch { reelOffset.snapTo(if (canGo) y else y / 4f) }
                                     }
                                     DragMode.NONE, DragMode.IGNORED -> Unit
                                 }
@@ -726,7 +791,7 @@ fun PlayerScreen(
                                 showOsd("Se pausará al terminar este video")
                             } else {
                                 sleepAtEnd = false
-                                player.pauseAtEndOfMediaItems = false
+                                player.pauseAtEndOfMediaItems = !settings.autoNext
                                 sleepAt = System.currentTimeMillis() + minutes * 60_000L
                                 showOsd("Se pausará en $minutes min")
                             }
@@ -737,7 +802,7 @@ fun PlayerScreen(
                             dialog = null
                             sleepAt = null
                             sleepAtEnd = false
-                            player.pauseAtEndOfMediaItems = false
+                            player.pauseAtEndOfMediaItems = !settings.autoNext
                             showOsd("Temporizador apagado")
                         }) { Text("Apagar temporizador") }
                     }
@@ -773,6 +838,39 @@ fun PlayerScreen(
 }
 
 enum class PlayerDialog { SPEED, AUDIO, SUBTITLES, QUIET_ACCESS, SLEEP }
+
+/** Al soltar el dedo en Reels: pasa al video siguiente o anterior, o vuelve a su sitio. */
+private suspend fun finishReelSwipe(
+    player: Player,
+    offset: Animatable<Float, AnimationVector1D>,
+    dy: Float,
+    height: Float,
+    showOsd: (String) -> Unit,
+) {
+    val goNext = dy < -height * REEL_SWIPE_FRACTION
+    val goPrevious = dy > height * REEL_SWIPE_FRACTION
+    when {
+        goNext && player.hasNextMediaItem() -> {
+            offset.animateTo(-height, tween(160))
+            player.seekToNextMediaItem()
+            player.play()
+            offset.snapTo(height)
+            offset.animateTo(0f, tween(220))
+        }
+        goPrevious && player.hasPreviousMediaItem() -> {
+            offset.animateTo(height, tween(160))
+            player.seekToPreviousMediaItem()
+            player.play()
+            offset.snapTo(-height)
+            offset.animateTo(0f, tween(220))
+        }
+        else -> {
+            if (goNext) showOsd("No hay más reels")
+            if (goPrevious) showOsd("Es el primer reel")
+            offset.animateTo(0f, spring())
+        }
+    }
+}
 
 fun speedLabel(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}x" else "${speed}x"
