@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ReproductorVideo"
+rootProject.name = "Repropower"
 include(":app")

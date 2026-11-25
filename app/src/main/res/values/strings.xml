@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Reproductor de Video</string>
+    <string name="app_name">Repropower</string>
     <string name="pick_video">Elegir video del teléfono</string>
     <string name="sample_video">Probar con video de ejemplo</string>
     <string name="welcome">Elige un video para empezar</string>
